@@ -118,7 +118,7 @@ class GeometryBuilder:
                 if seg_bounds is None:
                     continue
                 
-                local_corners = seg_bounds.bounds.get_corners()
+                local_corners = seg_bounds.get_corners()
                 face_name = face_side.name.lower() if segment_count == 1 else f"{face_side.name.lower()}-{i}"
                 panel.create_panel_side(face_name, face_side, corners=local_corners)
     

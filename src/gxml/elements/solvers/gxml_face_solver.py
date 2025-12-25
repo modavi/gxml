@@ -44,12 +44,14 @@ class FaceSegment:
     # Start boundary
     start_type: BoundaryType
     start_t: float  # Nominal t-value (intersection t, or 0.0)
-    start_intersection: Optional[Intersection] = None
-    start_intersecting_panels: List[GXMLPanel] = field(default_factory=list)
     
     # End boundary
     end_type: BoundaryType
     end_t: float  # Nominal t-value (intersection t, or 1.0)
+    
+    # Optional fields with defaults
+    start_intersection: Optional[Intersection] = None
+    start_intersecting_panels: List[GXMLPanel] = field(default_factory=list)
     end_intersection: Optional[Intersection] = None
     end_intersecting_panels: List[GXMLPanel] = field(default_factory=list)
     
@@ -388,10 +390,10 @@ class FaceSolver:
             face_solution.segments[PanelSide.START] = []
         elif panel.thickness <= TOLERANCE:
             # Zero thickness - no endpoint faces
-            panel_segments[PanelSide.START] = []
+            face_solution.segments[PanelSide.START] = []
         else:
             # Create synthetic segment for START face
-            panel_segments[PanelSide.START] = [
+            face_solution.segments[PanelSide.START] = [
                 FaceSegment(
                     start_type=BoundaryType.PANEL_START,
                     start_t=0.0,

@@ -211,7 +211,7 @@ class BoundsSolution:
         seg_bounds = self.get_segment_bounds(panel, face_side, segment_index)
         if seg_bounds is None:
             return None
-        return BoundsSolver._bounds_to_world_corners(panel, face_side, seg_bounds.bounds)
+        return BoundsSolver._bounds_to_world_corners(panel, face_side, seg_bounds)
     
     def get_all_face_corners(self, panel: GXMLPanel, face_side: PanelSide) -> List[List[np.ndarray]]:
         """
