@@ -745,6 +745,207 @@ class CrossingTests(BaseIntegrationTest):
             </root>'''
         )
 
+    def testComplexAngularIntersection(self):
+        """Test complex multi-panel intersection with varied angles and interior panel suppression.
+        
+        Four panels with different sizes and angles meeting at the origin:
+        - Panel 0: 8 units along +X with 0.5 thickness
+        - Panel 1: 4 units rotated -90° (into -Z) attached at panel 0's start
+        - Panel 2: 8 units rotated 90° (into +Z) attached at panel 0's midpoint
+        - Panel 3: 12 units rotated -20° attached at panel 0's start (crosses panel 2)
+        
+        This creates crossing panels with interior segment suppression disabled (!purge-interior-panels).
+        Panel 3 crosses through panel 2, creating segmented faces with crossing-cap polygons.
+        """
+        self.assertXMLOutput(
+            '''<root>
+                <panel size="8" thickness="0.5" rotate="0" intersection-options="!purge-interior-panels"/>
+                <panel attach-id="0" attach-to="0" rotate="-90" size="4" thickness="0.5" intersection-options="!purge-interior-panels"/>
+                <panel attach-to="0.5" rotate="90" size="8" thickness="0.5" intersection-options="!purge-interior-panels"/>
+                <panel attach-id="0" attach-to="0" rotate="-20" size="12" thickness="0.15" intersection-options="!purge-interior-panels"/>
+            </root>''',
+            '''<root>
+                <r id="0" pts="0,0,0|8,0,0|8,1,0|0,1,0">
+                    <r type="polygon" id="front" pts="0.906155,0,0.25|8,0,0.25|8,1,0.25|0.906155,1,0.25"/>
+                    <r type="polygon" id="back" pts="8,0,-0.25|-0.25,0,-0.25|-0.25,1,-0.25|8,1,-0.25"/>
+                    <r type="polygon" id="top" pts="-0.25,1,-0.25|0.906155,1,0.25|8,1,0.25|8,1,-0.25"/>
+                    <r type="polygon" id="bottom" pts="-0.25,0,-0.25|8,0,-0.25|8,0,0.25|0.906155,0,0.25"/>
+                    <r type="polygon" id="end" pts="8,0,0.25|8,0,-0.25|8,1,-0.25|8,1,0.25"/>
+                </r>
+                <r id="1" pts="0,0,0|2.44929e-16,0,4|2.44929e-16,1,4|0,1,0">
+                    <r type="polygon" id="front" pts="-0.25,0,-0.25|-0.25,0,4|-0.25,1,4|-0.25,1,-0.25"/>
+                    <r type="polygon" id="back-0" pts="0.25,0,1.75|0.25,0,0.170806|0.25,1,0.170806|0.25,1,1.75"/>
+                    <r type="polygon" id="back-1" pts="0.25,0,4|0.25,0,2.25|0.25,1,2.25|0.25,1,4"/>
+                    <r type="polygon" id="top" pts="0.25,1,0.170806|-0.25,1,-0.25|-0.25,1,4|0.25,1,4"/>
+                    <r type="polygon" id="bottom" pts="0.25,0,0.170806|0.25,0,4|-0.25,0,4|-0.25,0,-0.25"/>
+                    <r type="polygon" id="end" pts="-0.25,0,4|0.25,0,4|0.25,1,4|-0.25,1,4"/>
+                    <r type="polygon" id="cap-top" pts="0.25,1,0.170806|0.906155,1,0.25|-0.25,1,-0.25"/>
+                    <r type="polygon" id="cap-bottom" pts="-0.25,0,-0.25|0.906155,0,0.25|0.25,0,0.170806"/>
+                </r>
+                <r id="2" pts="1.22465e-16,0,2|8,0,2|8,1,2|1.22465e-16,1,2">
+                    <r type="polygon" id="front-0" pts="0.25,0,2.25|5.96254,0,2.25|5.96254,1,2.25|0.25,1,2.25"/>
+                    <r type="polygon" id="front-1" pts="6.40111,0,2.25|8,0,2.25|8,1,2.25|6.40111,1,2.25"/>
+                    <r type="polygon" id="back-0" pts="4.5888,0,1.75|0.25,0,1.75|0.25,1,1.75|4.5888,1,1.75"/>
+                    <r type="polygon" id="back-1" pts="8,0,1.75|5.02737,0,1.75|5.02737,1,1.75|8,1,1.75"/>
+                    <r type="polygon" id="top-0" pts="0.25,1,1.75|0.25,1,2.25|5.96254,1,2.25|4.5888,1,1.75"/>
+                    <r type="polygon" id="top-1" pts="5.02737,1,1.75|6.40111,1,2.25|8,1,2.25|8,1,1.75"/>
+                    <r type="polygon" id="bottom-0" pts="0.25,0,1.75|4.5888,0,1.75|5.96254,0,2.25|0.25,0,2.25"/>
+                    <r type="polygon" id="bottom-1" pts="5.02737,0,1.75|8,0,1.75|8,0,2.25|6.40111,0,2.25"/>
+                    <r type="polygon" id="end" pts="8,0,2.25|8,0,1.75|8,1,1.75|8,1,2.25"/>
+                </r>
+                <r id="3" pts="0,0,0|11.2763,0,4.10424|11.2763,1,4.10424|0,1,0">
+                    <r type="polygon" id="front-0" pts="0.25,0,0.170806|4.5888,0,1.75|4.5888,1,1.75|0.25,1,0.170806"/>
+                    <r type="polygon" id="front-1" pts="5.96254,0,2.25|11.2507,0,4.17472|11.2507,1,4.17472|5.96254,1,2.25"/>
+                    <r type="polygon" id="back-0" pts="5.02737,0,1.75|0.906155,0,0.25|0.906155,1,0.25|5.02737,1,1.75"/>
+                    <r type="polygon" id="back-1" pts="11.302,0,4.03376|6.40111,0,2.25|6.40111,1,2.25|11.302,1,4.03376"/>
+                    <r type="polygon" id="top-0" pts="0.906155,1,0.25|0.25,1,0.170806|4.5888,1,1.75|5.02737,1,1.75"/>
+                    <r type="polygon" id="top-1" pts="6.40111,1,2.25|5.96254,1,2.25|11.2507,1,4.17472|11.302,1,4.03376"/>
+                    <r type="polygon" id="bottom-0" pts="0.906155,0,0.25|5.02737,0,1.75|4.5888,0,1.75|0.25,0,0.170806"/>
+                    <r type="polygon" id="bottom-1" pts="6.40111,0,2.25|11.302,0,4.03376|11.2507,0,4.17472|5.96254,0,2.25"/>
+                    <r type="polygon" id="end" pts="11.2507,0,4.17472|11.302,0,4.03376|11.302,1,4.03376|11.2507,1,4.17472"/>
+                    <r type="polygon" id="crossing-cap-top" pts="5.96254,1,2.25|6.40111,1,2.25|5.02737,1,1.75|4.5888,1,1.75"/>
+                    <r type="polygon" id="crossing-cap-bottom" pts="4.5888,0,1.75|5.02737,0,1.75|6.40111,0,2.25|5.96254,0,2.25"/>
+                </r>
+            </root>'''
+        )
+
+    def testVerticalOffsetJoint(self):
+        """Test joint where panel 2 has vertical offset via pivot.
+        
+        Panel 0: 1x1 panel at origin
+        Panel 1: 1x2 panel rotated 90°, attached with vertical pivot offset
+        
+        The pivot="0,0.5" places panel 1's pivot at half its height (y=0.5 from its local origin).
+        attach-to="1,0.5" attaches at the end of panel 0 at half height.
+        This creates a panel that extends from y=-0.5 to y=1.5 (2 units tall, centered at y=0.5).
+        """
+        self.assertXMLOutput(
+            '''<root>
+                <panel size="1,1" thickness="0.5"/>
+                <panel size="1,2" pivot="0,0.5" attach-to="1,0.5" rotate="90" thickness="0.5"/>
+            </root>''',
+            '''<root>
+                <r id="0" pts="0,0,0|1,0,0|1,1,0|0,1,0">
+                    <r type="polygon" id="front" pts="0,0,0.25|1,0,0.25|1,1,0.25|0,1,0.25"/>
+                    <r type="polygon" id="back" pts="1,0,-0.25|0,0,-0.25|0,1,-0.25|1,1,-0.25"/>
+                    <r type="polygon" id="top" pts="0,1,-0.25|0,1,0.25|1,1,0.25|1,1,-0.25"/>
+                    <r type="polygon" id="bottom" pts="0,0,-0.25|1,0,-0.25|1,0,0.25|0,0,0.25"/>
+                    <r type="polygon" id="start" pts="0,0,-0.25|0,0,0.25|0,1,0.25|0,1,-0.25"/>
+                    <r type="polygon" id="end" pts="1,0,0.25|1,0,-0.25|1,1,-0.25|1,1,0.25"/>
+                </r>
+                <r id="1" pts="1,-0.5,0|1,-0.5,-1|1,1.5,-1|1,1.5,0">
+                    <r type="polygon" id="front" pts="1.25,-0.5,1.53081e-17|1.25,-0.5,-1|1.25,1.5,-1|1.25,1.5,1.53081e-17"/>
+                    <r type="polygon" id="back" pts="0.75,-0.5,-1|0.75,-0.5,0|0.75,1.5,0|0.75,1.5,-1"/>
+                    <r type="polygon" id="top" pts="0.75,1.5,-1.53081e-17|1.25,1.5,1.53081e-17|1.25,1.5,-1|0.75,1.5,-1"/>
+                    <r type="polygon" id="bottom" pts="0.75,-0.5,-1.53081e-17|0.75,-0.5,-1|1.25,-0.5,-1|1.25,-0.5,1.53081e-17"/>
+                    <r type="polygon" id="start" pts="0.75,-0.5,-1.53081e-17|1.25,-0.5,1.53081e-17|1.25,1.5,1.53081e-17|0.75,1.5,-1.53081e-17"/>
+                    <r type="polygon" id="end" pts="1.25,-0.5,-1|0.75,-0.5,-1|0.75,1.5,-1|1.25,1.5,-1"/>
+                </r>
+            </root>'''
+        )
+
+    def testThreePanelAngledJoint(self):
+        """Test three panels meeting at varied angles (120° and 45°).
+        
+        Panel 0: 5 units along +X
+        Panel 1: 5 units rotated 120° from panel 0's end
+        Panel 2: 5 units rotated 45° attached at panel 0's start
+        
+        Creates a Y-shaped intersection with cap polygons at the joint.
+        """
+        self.assertXMLOutput(
+            '''<root>
+                <panel size="5" thickness="0.5"/>
+                <panel size="5" rotate="120" thickness="0.5"/>
+                <panel size="5" attach-id="0" rotate="45" thickness="0.5"/>
+            </root>''',
+            '''<root>
+                <r id="0" pts="0,0,0|5,0,0|5,1,0|0,1,0">
+                    <r type="polygon" id="front" pts="0,0,0.25|5.10355,0,0.25|5.10355,1,0.25|0,1,0.25"/>
+                    <r type="polygon" id="back" pts="4.56699,0,-0.25|0,0,-0.25|0,1,-0.25|4.56699,1,-0.25"/>
+                    <r type="polygon" id="top" pts="0,1,-0.25|0,1,0.25|5.10355,1,0.25|4.56699,1,-0.25"/>
+                    <r type="polygon" id="bottom" pts="0,0,-0.25|4.56699,0,-0.25|5.10355,0,0.25|0,0,0.25"/>
+                    <r type="polygon" id="start" pts="0,0,-0.25|0,0,0.25|0,1,0.25|0,1,-0.25"/>
+                </r>
+                <r id="1" pts="5,0,0|2.5,0,-4.33013|2.5,1,-4.33013|5,1,0">
+                    <r type="polygon" id="front" pts="5.0536,0,-0.407157|2.71651,0,-4.45513|2.71651,1,-4.45513|5.0536,1,-0.407157"/>
+                    <r type="polygon" id="back" pts="2.28349,0,-4.20513|4.56699,0,-0.25|4.56699,1,-0.25|2.28349,1,-4.20513"/>
+                    <r type="polygon" id="top" pts="4.56699,1,-0.25|5.0536,1,-0.407157|2.71651,1,-4.45513|2.28349,1,-4.20513"/>
+                    <r type="polygon" id="bottom" pts="4.56699,0,-0.25|2.28349,0,-4.20513|2.71651,0,-4.45513|5.0536,0,-0.407157"/>
+                    <r type="polygon" id="end" pts="2.71651,0,-4.45513|2.28349,0,-4.20513|2.28349,1,-4.20513|2.71651,1,-4.45513"/>
+                    <r type="polygon" id="cap-top" pts="4.56699,1,-0.25|5.10355,1,0.25|5.0536,1,-0.407157"/>
+                    <r type="polygon" id="cap-bottom" pts="5.0536,0,-0.407157|5.10355,0,0.25|4.56699,0,-0.25"/>
+                </r>
+                <r id="2" pts="5,0,0|8.53553,0,-3.53553|8.53553,1,-3.53553|5,1,0">
+                    <r type="polygon" id="front" pts="5.10355,0,0.25|8.71231,0,-3.35876|8.71231,1,-3.35876|5.10355,1,0.25"/>
+                    <r type="polygon" id="back" pts="8.35876,0,-3.71231|5.0536,0,-0.407157|5.0536,1,-0.407157|8.35876,1,-3.71231"/>
+                    <r type="polygon" id="top" pts="5.0536,1,-0.407157|5.10355,1,0.25|8.71231,1,-3.35876|8.35876,1,-3.71231"/>
+                    <r type="polygon" id="bottom" pts="5.0536,0,-0.407157|8.35876,0,-3.71231|8.71231,0,-3.35876|5.10355,0,0.25"/>
+                    <r type="polygon" id="end" pts="8.71231,0,-3.35876|8.35876,0,-3.71231|8.35876,1,-3.71231|8.71231,1,-3.35876"/>
+                </r>
+            </root>'''
+        )
+
+    def testFivePanelComplexJoint(self):
+        """Test five panels meeting at complex angles.
+        
+        Panel 0: 5 units along +X
+        Panel 1: 5 units rotated 90° (perpendicular)
+        Panel 2: 5 units rotated 135° attached at panel 0's start
+        Panel 3: 5 units rotated 20° attached at panel 0's start
+        Panel 4: 5 units rotated -40° attached at panel 0's start
+        
+        Creates a complex 5-way star intersection with pentagonal cap polygons.
+        """
+        self.assertXMLOutput(
+            '''<root>
+                <panel size="5" thickness="0.5"/>
+                <panel size="5" rotate="90" thickness="0.5"/>
+                <panel size="5" attach-id="0" rotate="135" thickness="0.5"/>
+                <panel size="5" attach-id="0" rotate="20" thickness="0.5"/>
+                <panel size="5" attach-id="0" rotate="-40" thickness="0.5"/>
+            </root>''',
+            '''<root>
+                <r id="0" pts="0,0,0|5,0,0|5,1,0|0,1,0">
+                    <r type="polygon" id="front" pts="0,0,0.25|4.90901,0,0.25|4.90901,1,0.25|0,1,0.25"/>
+                    <r type="polygon" id="back" pts="4.39645,0,-0.25|0,0,-0.25|0,1,-0.25|4.39645,1,-0.25"/>
+                    <r type="polygon" id="top" pts="0,1,-0.25|0,1,0.25|4.90901,1,0.25|4.39645,1,-0.25"/>
+                    <r type="polygon" id="bottom" pts="0,0,-0.25|4.39645,0,-0.25|4.90901,0,0.25|0,0,0.25"/>
+                    <r type="polygon" id="start" pts="0,0,-0.25|0,0,0.25|0,1,0.25|0,1,-0.25"/>
+                </r>
+                <r id="1" pts="5,0,0|5,0,-5|5,1,-5|5,1,0">
+                    <r type="polygon" id="front" pts="5.25,0,-0.357037|5.25,0,-5|5.25,1,-5|5.25,1,-0.357037"/>
+                    <r type="polygon" id="back" pts="4.75,0,-5|4.75,0,-0.603553|4.75,1,-0.603553|4.75,1,-5"/>
+                    <r type="polygon" id="top" pts="4.75,1,-0.603553|5.25,1,-0.357037|5.25,1,-5|4.75,1,-5"/>
+                    <r type="polygon" id="bottom" pts="4.75,0,-0.603553|4.75,0,-5|5.25,0,-5|5.25,0,-0.357037"/>
+                    <r type="polygon" id="end" pts="5.25,0,-5|4.75,0,-5|4.75,1,-5|5.25,1,-5"/>
+                </r>
+                <r id="2" pts="5,0,0|1.46447,0,-3.53553|1.46447,1,-3.53553|5,1,0">
+                    <r type="polygon" id="front" pts="4.75,0,-0.603553|1.64124,0,-3.71231|1.64124,1,-3.71231|4.75,1,-0.603553"/>
+                    <r type="polygon" id="back" pts="1.28769,0,-3.35876|4.39645,0,-0.25|4.39645,1,-0.25|1.28769,1,-3.35876"/>
+                    <r type="polygon" id="top" pts="4.39645,1,-0.25|4.75,1,-0.603553|1.64124,1,-3.71231|1.28769,1,-3.35876"/>
+                    <r type="polygon" id="bottom" pts="4.39645,0,-0.25|1.28769,0,-3.35876|1.64124,0,-3.71231|4.75,0,-0.603553"/>
+                    <r type="polygon" id="end" pts="1.64124,0,-3.71231|1.28769,0,-3.35876|1.28769,1,-3.35876|1.64124,1,-3.71231"/>
+                    <r type="polygon" id="cap-top" pts="4.39645,1,-0.25|4.90901,1,0.25|5.4924,1,0.0868241|5.25,1,-0.357037|4.75,1,-0.603553"/>
+                    <r type="polygon" id="cap-bottom" pts="4.75,0,-0.603553|5.25,0,-0.357037|5.4924,0,0.0868241|4.90901,0,0.25|4.39645,0,-0.25"/>
+                </r>
+                <r id="3" pts="5,0,0|9.69846,0,-1.7101|9.69846,1,-1.7101|5,1,0">
+                    <r type="polygon" id="front" pts="5.4924,0,0.0868241|9.78397,0,-1.47518|9.78397,1,-1.47518|5.4924,1,0.0868241"/>
+                    <r type="polygon" id="back" pts="9.61296,0,-1.94502|5.25,0,-0.357037|5.25,1,-0.357037|9.61296,1,-1.94502"/>
+                    <r type="polygon" id="top" pts="5.25,1,-0.357037|5.4924,1,0.0868241|9.78397,1,-1.47518|9.61296,1,-1.94502"/>
+                    <r type="polygon" id="bottom" pts="5.25,0,-0.357037|9.61296,0,-1.94502|9.78397,0,-1.47518|5.4924,0,0.0868241"/>
+                    <r type="polygon" id="end" pts="9.78397,0,-1.47518|9.61296,0,-1.94502|9.61296,1,-1.94502|9.78397,1,-1.47518"/>
+                </r>
+                <r id="4" pts="5,0,0|8.83022,0,3.21394|8.83022,1,3.21394|5,1,0">
+                    <r type="polygon" id="front" pts="4.90901,0,0.25|8.66953,0,3.40545|8.66953,1,3.40545|4.90901,1,0.25"/>
+                    <r type="polygon" id="back" pts="8.99092,0,3.02243|5.4924,0,0.0868241|5.4924,1,0.0868241|8.99092,1,3.02243"/>
+                    <r type="polygon" id="top" pts="5.4924,1,0.0868241|4.90901,1,0.25|8.66953,1,3.40545|8.99092,1,3.02243"/>
+                    <r type="polygon" id="bottom" pts="5.4924,0,0.0868241|8.99092,0,3.02243|8.66953,0,3.40545|4.90901,0,0.25"/>
+                    <r type="polygon" id="end" pts="8.66953,0,3.40545|8.99092,0,3.02243|8.99092,1,3.02243|8.66953,1,3.40545"/>
+                </r>
+            </root>'''
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
