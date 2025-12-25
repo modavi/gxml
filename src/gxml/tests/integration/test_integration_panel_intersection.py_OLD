@@ -1,0 +1,639 @@
+# """
+# Integration tests for panel intersection and thickness features.
+
+# Tests panel splitting, intersections between panels, interior panel detection,
+# thickness rendering with blocks, endcaps, and complex joint solving through
+# the complete parsing and layout pipeline.
+# """
+
+# import unittest
+# import numpy as np
+# from GXMLLayout import GXMLLayout
+# from GXMLTypes import Axis
+# from layouts.GXMLConstructLayout import GXMLConstructLayout
+# from layouts.GXMLStackLayout import GXMLStackLayout
+# from layouts.GXMLFixedLayout import GXMLFixedLayout
+# from tests.test_fixtures.base_integration_test import BaseIntegrationTest
+# from tests.test_fixtures.assertions import assert_corner_points
+
+
+# class PanelIntersectionTests(BaseIntegrationTest):
+#     """Integration tests for panel-to-panel intersections.
+    
+#     Tests intersection detection, panel splitting at crossings, and
+#     intersection point calculation with and without thickness.
+#     """
+    
+#     def setUp(self):
+#         super().setUp()
+#         GXMLLayout.bindLayout("construct", GXMLConstructLayout())
+#         GXMLLayout.bindLayout("stack", GXMLStackLayout())
+#         GXMLLayout.bindLayout("fixed", GXMLFixedLayout())
+        
+#     def test_intersecting_panels(self):
+#         """Test basic T-junction creates split in first panel."""
+#         root = self.parsePanel("""<root>
+#                                         <panel/>
+#                                         <panel rotate="90" attach-to="0.5"/>
+#                                     </root>""")
+#         self.assertEqual(len(root.children[0].dynamicChildren), 2)
+#         self.assertNotEqual(root.children[0].dynamicChildren[0], root.children[0])
+#         self.assertNotEqual(root.children[0].dynamicChildren[1], root.children[0])
+#         self.assertEqual(len(root.children[1].dynamicChildren), 0)
+#         self.assertEqual(len(self.renderContext.polys), 3)
+        
+#     def test_intersecting_panels_cross(self):
+#         """Test crossing panels create splits in both panels."""
+#         root = self.parsePanel("""<root>
+#                                         <panel/>
+#                                         <panel rotate="90" pivot="0.5" attach-to="0.5"/>
+#                                     </root>""")
+#         self.assertEqual(len(root.children[0].dynamicChildren), 2)
+#         self.assertEqual(len(root.children[1].dynamicChildren), 2)
+#         self.assertEqual(len(self.renderContext.polys), 4)
+        
+#     def test_find_intersection_points_with_no_thickness(self):
+#         """Test intersection point calculation for zero-thickness panels."""
+#         root = self.parsePanel("""<root>
+#                                         <panel/>
+#                                         <panel rotate="90" attach-id="0" attach-to="0.25"/>
+#                                         <panel rotate="90" attach-id="0" attach-to="0.75"/>
+#                                         <panel rotate="-90" attach-id="0" attach-to="0.5"/>
+#                                     </root>""")
+#         intersections = root.children[0].findAllIntersectionPoints()
+#         self.assertEqual(len(intersections), 3)
+#         self.assertTrue(np.allclose(intersections, [0.25, 0.5, 0.75]))
+        
+#     def test_find_intersection_points_with_thickness(self):
+#         """Test intersection point calculation accounts for panel thickness."""
+#         root = self.parsePanel("""<root>
+#                                         <panel thickness="0.1"/>
+#                                         <panel thickness="0.1" rotate="90" attach-id="0" attach-to="0.25"/>
+#                                         <panel thickness="0.1" rotate="90" attach-id="0" attach-to="0.75"/>
+#                                         <panel thickness="0.1" rotate="-90" attach-id="0" attach-to="0.5"/>
+#                                     </root>""")
+        
+#         intersections = root.children[0].dynamicChildren[0].findAllIntersectionPoints()
+#         self.assertEqual(len(intersections), 4)
+#         self.assertTrue(np.allclose(intersections, [0.2, 0.3, 0.7, 0.8]))
+        
+#         intersections = root.children[0].dynamicChildren[1].findAllIntersectionPoints()
+#         self.assertEqual(len(intersections), 2)
+#         self.assertTrue(np.allclose(intersections, [0.45, 0.55]))
+
+
+# class PanelInteriorTests(BaseIntegrationTest):
+#     """Integration tests for interior panel detection and purging.
+    
+#     Tests detection of panels that are fully enclosed by other panels
+#     and their removal to create proper hollow structures.
+#     """
+    
+#     def setUp(self):
+#         super().setUp()
+#         GXMLLayout.bindLayout("construct", GXMLConstructLayout())
+#         GXMLLayout.bindLayout("stack", GXMLStackLayout())
+#         GXMLLayout.bindLayout("fixed", GXMLFixedLayout())
+    
+#     def test_is_panel_inside(self):
+#         """Test detection of whether a panel segment is inside another panel."""
+#         root = self.parsePanel("""<root>
+#                                         <panel thickness="0.1" intersection-options="!purge-interior-panels"/>
+#                                         <panel thickness="0.1" rotate="90" attach-id="0" attach-to="0.25" intersection-options="!purge-interior-panels"/>
+#                                         <panel thickness="0.1" rotate="90" attach-id="0" attach-to="0.75" intersection-options="!purge-interior-panels"/>
+#                                         <panel thickness="0.1" rotate="-90" attach-id="0" attach-to="0.5" intersection-options="!purge-interior-panels"/>
+#                                     </root>""")
+#         self.assertFalse(root.children[0].dynamicChildren[0].dynamicChildren[0].isInside(root.children[1]))
+#         self.assertTrue(root.children[0].dynamicChildren[0].dynamicChildren[1].isInside(root.children[1]))
+#         self.assertFalse(root.children[0].dynamicChildren[0].dynamicChildren[2].isInside(root.children[1]))
+    
+#     def test_interior_panels(self):
+#         """Test interior panel purging removes enclosed segments."""
+#         root = self.parsePanel("""<root>
+#                                         <panel thickness="0.1" intersection-options="!split-at-intersections"/>
+#                                         <panel thickness="0.1" rotate="90" attach-id="0" attach-to="0.25" intersection-options="!split-at-intersections"/>
+#                                         <panel thickness="0.1" rotate="90" attach-id="0" attach-to="0.75" intersection-options="!split-at-intersections"/>
+#                                         <panel thickness="0.1" rotate="-90" attach-id="0" attach-to="0.5" intersection-options="!split-at-intersections"/>
+#                                     </root>""")
+
+#         panel = root.children[0].dynamicChildren[0]
+        
+#         split_panels = panel.split(panel.findAllIntersectionPoints())
+#         self.assertEqual(len(split_panels), 5)
+        
+#         panel.purgeInteriorPanels(split_panels)
+#         self.assertEqual(len(panel.dynamicChildren), 3)
+        
+#     def test_interior_panels_with_complex_intersections(self):
+#         """Test interior panel detection with complex angular intersections."""
+#         root = self.parsePanel("""<root>
+#                                     <panel size="8" thickness="0.5" rotate="0" intersection-options="!purge-interior-panels"/>
+#                                     <panel attach-id="0" attach-to="0" rotate="-90" size="4" thickness="0.5" intersection-options="!purge-interior-panels"/>
+#                                     <panel attach-to="0.5" rotate="90" size="8" thickness="0.5" intersection-options="!purge-interior-panels"/>
+#                                     <panel attach-id="0" attach-to="0" rotate="-20" size="12" thickness="0.15" intersection-options="!purge-interior-panels"/>
+#                                 </root>""")
+        
+#         panel3 = root.children[3].dynamicChildren[1]
+#         self.assertEqual(len(panel3.dynamicChildren), 3)
+        
+#         expected_remaining_panels = [panel3.dynamicChildren[0], panel3.dynamicChildren[2]]
+#         panel3.purgeInteriorPanels(panel3.dynamicChildren)
+#         self.assertEqual(len(panel3.dynamicChildren), 2)
+#         self.assertEqual(panel3.dynamicChildren, expected_remaining_panels)
+       
+
+    
+
+# class PanelEndcapTests(BaseIntegrationTest):
+#     """Integration tests for panel endcap generation at intersections.
+    
+#     Tests determination of adjacent blocks, offset panels, and endcap
+#     panel creation at endpoints with multiple intersecting panels.
+#     """
+    
+#     def setUp(self):
+#         super().setUp()
+#         GXMLLayout.bindLayout("construct", GXMLConstructLayout())
+#         GXMLLayout.bindLayout("stack", GXMLStackLayout())
+#         GXMLLayout.bindLayout("fixed", GXMLFixedLayout())
+        
+#     def test_endcaps_with_multiple_intersections_adjacent_panel(self):
+#         """Test detection of adjacent blocks at endpoints with multiple panels."""
+#         root = self.parsePanel("""<root>
+#                                     <panel size="5,1" thickness="0.5"/>
+#                                     <panel size="5,2" rotate="120" thickness="0.5"/>
+#                                     <panel size="5,3" attach-id="0" rotate="45" thickness="0.5"/>
+#                                 </root>""")
+        
+#         def get_endpoint_adjacent_block(panel, end_point, block_side):
+#             corner_panels = panel.getBlocksJoinedAtEndpointSortedCCW(end_point)
+#             adjacent_panel = panel.getAdjacentBlock(corner_panels, block_side, end_point)
+#             return adjacent_panel
+        
+#         adjacent_block = get_endpoint_adjacent_block(root.children[0], 1, -1)
+#         self.assertEqual(adjacent_block.id, "1")
+#         adjacent_block = get_endpoint_adjacent_block(root.children[0], 1, 1)
+#         self.assertEqual(adjacent_block.id, "2")
+        
+#         adjacent_block = get_endpoint_adjacent_block(root.children[1], 0, -1)
+#         self.assertEqual(adjacent_block.id, "0")
+#         adjacent_block = get_endpoint_adjacent_block(root.children[1], 0, 1)
+#         self.assertEqual(adjacent_block.id, "2")
+            
+#         adjacent_block = get_endpoint_adjacent_block(root.children[2], 0, -1)
+#         self.assertEqual(adjacent_block.id, "1")
+#         adjacent_block = get_endpoint_adjacent_block(root.children[2], 0, 1)
+#         self.assertEqual(adjacent_block.id, "0")
+        
+#     def test_endcaps_with_multiple_intersections_offset_panel(self):
+#         """Test endcap offset panel detection at endpoints."""
+#         root = self.parsePanel("""<root>
+#                                     <panel size="5,1" thickness="0.5"/>
+#                                     <panel size="5,2" rotate="120" thickness="0.5"/>
+#                                     <panel size="5,3" attach-id="0" rotate="45" thickness="0.5"/>
+#                                 </root>""")
+        
+#         adjacent_block = root.children[0].getEndcapOffsetPanel(1, 0)
+#         self.assertIsNone(adjacent_block)
+#         adjacent_block = root.children[0].getEndcapOffsetPanel(1, 1)
+#         self.assertIsNone(adjacent_block)
+#         adjacent_block = root.children[0].getEndcapOffsetPanel(1, 2)
+#         self.assertIsNone(adjacent_block)
+        
+#         adjacent_block = root.children[1].getEndcapOffsetPanel(0, 0)
+#         self.assertEqual(adjacent_block.id, "0")
+#         adjacent_block = root.children[1].getEndcapOffsetPanel(0, 1)
+#         self.assertIsNone(adjacent_block)
+#         adjacent_block = root.children[1].getEndcapOffsetPanel(0, 2)
+#         self.assertIsNone(adjacent_block)
+        
+#         adjacent_block = root.children[2].getEndcapOffsetPanel(0, 0)
+#         self.assertEqual(adjacent_block.id, "1")
+#         adjacent_block = root.children[2].getEndcapOffsetPanel(0, 1)
+#         self.assertEqual(adjacent_block.id, "0")
+#         adjacent_block = root.children[2].getEndcapOffsetPanel(0, 2)
+#         self.assertEqual(adjacent_block.id, "0")
+        
+#     def test_get_num_endcap_panels_with_intersections(self):
+#         """Test counting of required endcap panels at intersection points."""
+#         root = self.parsePanel("""<root>
+#                                     <panel size="5,1" thickness="0.5"/>
+#                                     <panel size="5,2" rotate="120" thickness="0.5"/>
+#                                     <panel size="5,3" attach-id="0" rotate="45" thickness="0.5"/>
+#                                 </root>""")
+        
+#         self.assertEqual(root.children[0].getNumEndcapPanels(1), 0)
+#         self.assertEqual(root.children[1].getNumEndcapPanels(0), 1)
+#         self.assertEqual(root.children[2].getNumEndcapPanels(0), 2)
+
+
+# class PanelJointSolvingTests(BaseIntegrationTest):
+#     """Integration tests for joint solving between intersecting panels.
+    
+#     Tests block point calculation, intersection solving, adjacent block detection,
+#     and complex joint scenarios with multiple panels at various angles.
+#     """
+    
+#     def setUp(self):
+#         super().setUp()
+#         GXMLLayout.bindLayout("construct", GXMLConstructLayout())
+#         GXMLLayout.bindLayout("stack", GXMLStackLayout())
+#         GXMLLayout.bindLayout("fixed", GXMLFixedLayout())
+        
+#     def test_get_joined_panels(self):
+#         """Test joined panels are correctly sorted counter-clockwise."""
+#         # Make sure they're all sorted counter clockwise
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="120" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="45" thickness="0.5"/>
+#                                     </root>""")
+        
+#         joined_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(1)
+#         self.assertEqual(len(joined_blocks), 3)
+#         self.assertEqual(joined_blocks[0], root.children[0])
+#         self.assertEqual(joined_blocks[1], root.children[2])
+#         self.assertEqual(joined_blocks[2], root.children[1])
+        
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="45" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="120" thickness="0.5"/>
+#                                     </root>""")
+        
+#         joined_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(1)
+#         self.assertEqual(len(joined_blocks), 3)
+#         self.assertEqual(joined_blocks[0], root.children[0])
+#         self.assertEqual(joined_blocks[1], root.children[1])
+#         self.assertEqual(joined_blocks[2], root.children[2])
+        
+#     def test_get_adjacent_blocks(self):
+#         """Test adjacent block determination from sorted corner blocks."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="45" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="120" thickness="0.5"/>
+#                                     </root>""")
+        
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block_0 = root.children[0].getAdjacentBlock(corner_blocks, -1, 1)
+#         adjacent_block_1 = root.children[0].getAdjacentBlock(corner_blocks, 1, 1)
+#         self.assertEqual(adjacent_block_0, root.children[2])
+#         self.assertEqual(adjacent_block_1, root.children[1])
+        
+#         corner_blocks = root.children[1].getBlocksJoinedAtEndpointSortedCCW(0)
+#         adjacent_block_0 = root.children[1].getAdjacentBlock(corner_blocks, -1, 0)
+#         adjacent_block_1 = root.children[1].getAdjacentBlock(corner_blocks, 1, 0)
+#         self.assertEqual(adjacent_block_0, root.children[2])
+#         self.assertEqual(adjacent_block_1, root.children[0])
+        
+#         corner_blocks = root.children[2].getBlocksJoinedAtEndpointSortedCCW(0)
+#         adjacent_block_0 = root.children[2].getAdjacentBlock(corner_blocks, -1, 0)
+#         adjacent_block_1 = root.children[2].getAdjacentBlock(corner_blocks, 1, 0)
+#         self.assertEqual(adjacent_block_0, root.children[0])
+#         self.assertEqual(adjacent_block_1, root.children[1])
+        
+#         corner_blocks = root.children[1].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block_0 = root.children[1].getAdjacentBlock(corner_blocks, -1, 1)
+#         adjacent_block_1 = root.children[1].getAdjacentBlock(corner_blocks, 1, 1)
+#         self.assertIsNone(adjacent_block_0)
+#         self.assertIsNone(adjacent_block_1)
+        
+#         corner_blocks = root.children[2].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block_0 = root.children[2].getAdjacentBlock(corner_blocks, -1, 1)
+#         adjacent_block_1 = root.children[2].getAdjacentBlock(corner_blocks, 1, 1)
+#         self.assertIsNone(adjacent_block_0)
+#         self.assertIsNone(adjacent_block_1)
+        
+#     def test_get_adjacent_blocks_two_elements(self):
+#         """Test adjacent block detection with only two intersecting panels."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                     </root>""")
+        
+#         corner_blocks = root.children[1].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block_0 = root.children[1].getAdjacentBlock(corner_blocks, -1, 1)
+#         adjacent_block_1 = root.children[1].getAdjacentBlock(corner_blocks, 1, 1)
+#         self.assertIsNone(adjacent_block_0)
+#         self.assertIsNone(adjacent_block_1)
+        
+#         corner_blocks = root.children[1].getBlocksJoinedAtEndpointSortedCCW(0)
+#         adjacent_block_0 = root.children[1].getAdjacentBlock(corner_blocks, -1, 0)
+#         adjacent_block_1 = root.children[1].getAdjacentBlock(corner_blocks, 1, 0)
+#         self.assertEqual(adjacent_block_0, root.children[0])
+#         self.assertEqual(adjacent_block_1, root.children[0])
+        
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block_0 = root.children[0].getAdjacentBlock(corner_blocks, -1, 1)
+#         adjacent_block_1 = root.children[0].getAdjacentBlock(corner_blocks, 1, 1)
+#         self.assertEqual(adjacent_block_0, root.children[1])
+#         self.assertEqual(adjacent_block_1, root.children[1])
+        
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(0)
+#         adjacent_block_0 = root.children[0].getAdjacentBlock(corner_blocks, -1, 0)
+#         adjacent_block_1 = root.children[0].getAdjacentBlock(corner_blocks, 1, 0)
+#         self.assertIsNone(adjacent_block_0)
+#         self.assertIsNone(adjacent_block_1)
+        
+#     def test_get_adjacent_block_endpoint_with_no_adjacent(self):
+#         """Test adjacent block detection returns None for unconnected endpoint."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="45" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="120" thickness="0.5"/>
+#                                     </root>""")
+        
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(0)
+#         adjacent_block_0 = root.children[0].getAdjacentBlock(corner_blocks, -1, 0)
+#         adjacent_block_1 = root.children[0].getAdjacentBlock(corner_blocks, 1, 0)
+#         self.assertIsNone(adjacent_block_0)
+#         self.assertIsNone(adjacent_block_1)
+        
+#     def test_panel_side(self):
+#         """Test panel block side point calculation."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                     </root>""")
+        
+#         p1, p2 = root.children[0].getBlockPoints(-1)
+#         self.assertTrue(np.allclose(p1, [0, 0, -0.25]))
+#         self.assertTrue(np.allclose(p2, [5, 0, -0.25]))
+        
+#         p1, p2 = root.children[0].getBlockPoints(1)
+#         self.assertTrue(np.allclose(p1, [0, 0, 0.25]))
+#         self.assertTrue(np.allclose(p2, [5, 0, 0.25]))
+        
+#     def test_block_side_3_elements(self):
+#         """Test block side calculation with three intersecting panels."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="135" thickness="0.5"/>
+#                                     </root>""")
+        
+#         p1, p2 = root.children[0].getBlockPoints(-1)
+#         self.assertTrue(np.allclose(p1, [0, 0, -0.25]))
+#         self.assertTrue(np.allclose(p2, [5, 0, -0.25]))
+        
+#         p1, p2 = root.children[0].getBlockPoints(1)
+#         self.assertTrue(np.allclose(p1, [0, 0, 0.25]))
+#         self.assertTrue(np.allclose(p2, [5, 0, 0.25]))
+        
+#         p1, p2 = root.children[1].getBlockPoints(-1)
+#         self.assertTrue(np.allclose(p1, [4.75, 0, 0]))
+#         self.assertTrue(np.allclose(p2, [4.75, 0, -5]))
+        
+#         p1, p2 = root.children[1].getBlockPoints(1)
+#         self.assertTrue(np.allclose(p1, [5.25, 0, 0]))
+#         self.assertTrue(np.allclose(p2, [5.25, 0, -5]))
+        
+#         p1, p2 = root.children[2].getBlockPoints(-1)
+#         self.assertTrue(np.allclose(p1, [4.82322, 0, 0.176777]))
+#         self.assertTrue(np.allclose(p2, [1.28769, 0, -3.35876]))
+        
+#         p1, p2 = root.children[2].getBlockPoints(1)
+#         self.assertTrue(np.allclose(p1, [5.17678, 0, -0.176777]))
+#         self.assertTrue(np.allclose(p2, [1.64124, 0, -3.71231]))
+        
+#     def test_invalid_blockside(self):
+#         """Test invalid block side values raise appropriate errors."""
+#         root = self.parsePanel("""<root>
+#                                     <panel size="5" side="top" thickness="0.5"/>
+#                                 </root>""")
+#         with self.assertRaises(ValueError):
+#             root.children[0].getBlockPoints(0.2)
+#         with self.assertRaises(ValueError):
+#             root.children[0].getBlockPoints(1.1)
+#         with self.assertRaises(ValueError):
+#             root.children[0].getBlockPoints(-2)
+        
+#     def test_solve_intersections(self):
+#         """Test corner intersection solving adjusts endpoint positions."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="135" thickness="0.5"/>
+#                                     </root>""")
+#         block = root.children[0]
+#         p1, p2 = block.getBlockPoints(-1)
+        
+#         p1 = block.solveCornerIntersections(p1, p2, 0, 1)
+#         p2 = block.solveCornerIntersections(p2, p1, 1, 1)
+#         self.assertTrue(np.allclose(p1, [0, 0, -0.25]))
+#         self.assertTrue(np.allclose(p2, [5.25, 0, -0.25]))
+    
+#     def test_joint_with_vertical_offset_adjacent_panels(self):
+#         """Test panel joint detection with vertical offset attachments."""
+#         root = self.parsePanel("""<root>
+#                                     <panel size="1,1" thickness="0.5"/>
+#                                     <panel size="1,2" pivot="0,0.5" attach-to="1,0.5" rotate="90" thickness="0.5"/>
+#                                 </root>""")
+        
+#         block0 = root.children[0]
+#         block1 = root.children[1]
+        
+#         corner_blocks_0 = block0.getBlocksJoinedAtEndpointSortedCCW(1)
+#         self.assertEqual(len(corner_blocks_0), 2)
+#         self.assertEqual(corner_blocks_0[0], block0)
+#         self.assertEqual(corner_blocks_0[1], block1)
+
+#         corner_blocks_1 = block1.getBlocksJoinedAtEndpointSortedCCW(0)        
+#         self.assertEqual(len(corner_blocks_1), 2)
+#         self.assertEqual(corner_blocks_1[0], block1)
+#         self.assertEqual(corner_blocks_1[1], block0)
+        
+#     def test_joint_with_vertical_offset_solve_intersections(self):
+#         """Test intersection solving with vertically offset panel attachments."""
+#         root = self.parsePanel("""<root>
+#                                     <panel size="1,1" thickness="0.5"/>
+#                                     <panel size="1,2" pivot="0,0.5" attach-to="1,0.5" rotate="90" thickness="0.5"/>
+#                                 </root>""")
+#         block = root.children[0]
+#         p1, p2 = block.getBlockPoints(-1)
+#         p1 = block.solveCornerIntersections(p1, p2, 0, -1)
+#         p2 = block.solveCornerIntersections(p2, p1, 1, -1)
+#         self.assertTrue(np.allclose(p1, [0, 0, -0.25]))
+#         self.assertTrue(np.allclose(p2, [0.75, 0, -0.25]))
+        
+#         p1, p2 = block.getBlockPoints(1)
+#         p1 = block.solveCornerIntersections(p1, p2, 0, 1)
+#         p2 = block.solveCornerIntersections(p2, p1, 1, 1)
+#         self.assertTrue(np.allclose(p1, [0, 0, 0.25]))
+#         self.assertTrue(np.allclose(p2, [1.25, 0, 0.25]))
+        
+#         block = root.children[1]
+#         p1, p2 = block.getBlockPoints(-1)
+#         p1 = block.solveCornerIntersections(p1, p2, 0, -1)
+#         p2 = block.solveCornerIntersections(p2, p1, 1, -1)
+#         self.assertTrue(np.allclose(p1, [0.75, 0, -0.25]))
+#         self.assertTrue(np.allclose(p2, [0.75, 0, -1.00]))
+        
+#         p1, p2 = block.getBlockPoints(1)
+#         p1 = block.solveCornerIntersections(p1, p2, 0, 1)
+#         p2 = block.solveCornerIntersections(p2, p1, 1, 1)
+#         self.assertTrue(np.allclose(p1, [1.25, 0, 0.25]))
+#         self.assertTrue(np.allclose(p2, [1.25, 0, -1.0]))
+        
+#     def test_get_adjacent_block_points(self):
+#         """Test retrieval of adjacent block edge points for joint solving."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="135" thickness="0.5"/>
+#                                     </root>""")
+        
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block = root.children[0].getAdjacentBlock(corner_blocks, -1, 1)
+#         p1, p2 = root.children[0].getAdjacentBlockPoints(adjacent_block, -1, 1)
+#         start_point, end_point = root.children[2].getBlockPoints(-1)
+#         self.assertTrue((np.allclose(p1, start_point) and np.allclose(p2, end_point)) or 
+#                        (np.allclose(p1, end_point) and np.allclose(p2, start_point)))
+
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block = root.children[0].getAdjacentBlock(corner_blocks, 1, 1)        
+#         p1, p2 = root.children[0].getAdjacentBlockPoints(adjacent_block, 1, 1)
+#         start_point, end_point = root.children[1].getBlockPoints(1)
+#         self.assertTrue((np.allclose(p1, start_point) and np.allclose(p2, end_point)) or 
+#                        (np.allclose(p1, end_point) and np.allclose(p2, start_point)))
+        
+#         corner_blocks = root.children[1].getBlocksJoinedAtEndpointSortedCCW(0)
+#         adjacent_block = root.children[1].getAdjacentBlock(corner_blocks, -1, 0)        
+#         p1, p2 = root.children[1].getAdjacentBlockPoints(adjacent_block, -1, 0)
+#         start_point, end_point = root.children[2].getBlockPoints(1)
+#         self.assertTrue((np.allclose(p1, start_point) and np.allclose(p2, end_point)) or 
+#                        (np.allclose(p1, end_point) and np.allclose(p2, start_point)))
+        
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block = root.children[0].getAdjacentBlock(corner_blocks, 1, 1)
+#         p1, p2 = root.children[0].getAdjacentBlockPoints(adjacent_block, 1, 1)
+#         start_point, end_point = root.children[1].getBlockPoints(1)
+#         self.assertTrue((np.allclose(p1, start_point) and np.allclose(p2, end_point)) or 
+#                        (np.allclose(p1, end_point) and np.allclose(p2, start_point)))
+        
+#     def test_get_adjacent_block_points_2_blocks(self):
+#         """Test adjacent block point retrieval with two intersecting blocks."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                     </root>""")
+        
+#         corner_blocks = root.children[1].getBlocksJoinedAtEndpointSortedCCW(0)
+#         adjacent_block = root.children[1].getAdjacentBlock(corner_blocks, -1, 0)
+#         p1, p2 = root.children[1].getAdjacentBlockPoints(adjacent_block, -1, 0)
+        
+#         adj_block = root.children[0]
+#         start_point, end_point = adj_block.getBlockPoints(-1)
+#         self.assertTrue((np.allclose(p1, start_point) and np.allclose(p2, end_point)) or 
+#                        (np.allclose(p1, end_point) and np.allclose(p2, start_point)))
+        
+#     def test_get_all_elements_sharing_a_point(self):
+#         """Test finding all panels that share a common endpoint."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="135" thickness="0.5"/>
+#                                         <panel size="5" thickness="0.5"/>
+#                                     </root>""")
+        
+#         self.assertEqual(len(root.children[0].getAllElementsSharingAPoint()), 3)
+#         attached_blocks = root.children[0].getAllElementsSharingAPoint()
+#         self.assertIn(root.children[0], attached_blocks)
+#         self.assertIn(root.children[1], attached_blocks)
+#         self.assertIn(root.children[2], attached_blocks)
+        
+#         self.assertEqual(len(root.children[1].getAllElementsSharingAPoint()), 3)
+#         attached_blocks = root.children[1].getAllElementsSharingAPoint()
+#         self.assertIn(root.children[0], attached_blocks)
+#         self.assertIn(root.children[1], attached_blocks)
+#         self.assertIn(root.children[2], attached_blocks)
+        
+#         self.assertEqual(len(root.children[2].getAllElementsSharingAPoint()), 4)
+#         attached_blocks = root.children[2].getAllElementsSharingAPoint()
+#         self.assertIn(root.children[0], attached_blocks)
+#         self.assertIn(root.children[1], attached_blocks)
+#         self.assertIn(root.children[2], attached_blocks)
+#         self.assertIn(root.children[3], attached_blocks)
+        
+#         self.assertEqual(len(root.children[3].getAllElementsSharingAPoint()), 2)
+#         attached_blocks = root.children[3].getAllElementsSharingAPoint()
+#         self.assertIn(root.children[2], attached_blocks)
+#         self.assertIn(root.children[3], attached_blocks)
+        
+#     def test_get_adjacent_block_points_with_no_adjacent_blocks(self):
+#         """Test adjacent block points return None when no adjacent blocks exist."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                     </root>""")
+        
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(1)
+#         adjacent_block = root.children[0].getAdjacentBlock(corner_blocks, -1, 1)
+#         p1, p2 = root.children[0].getAdjacentBlockPoints(adjacent_block, -1, 1)
+#         self.assertIsNone(p1)
+#         self.assertIsNone(p2)
+            
+#     def test_get_adjacent_block_points_with_adjacent_blocks_on_only_one_end(self):
+#         """Test adjacent block points when only one endpoint has neighbors."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="135" thickness="0.5"/>
+#                                     </root>""")
+        
+#         corner_blocks = root.children[0].getBlocksJoinedAtEndpointSortedCCW(0)
+#         adjacent_block = root.children[0].getAdjacentBlock(corner_blocks, -1, 0)
+#         p1, p2 = root.children[0].getAdjacentBlockPoints(adjacent_block, -1, 0)
+#         self.assertIsNone(p1)
+#         self.assertIsNone(p2)
+        
+#     def test_is_block_oriented_away_from_other_block(self):
+#         """Test block orientation detection relative to endpoint."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="135" thickness="0.5"/>
+#                                     </root>""")
+#         block = root.children[0]
+#         endpoint_loc = block.transform.transformPoint((1, 0, 0))
+        
+#         self.assertTrue(root.children[0].isBlockOrientedTowardsEndpoint(endpoint_loc))
+#         self.assertFalse(root.children[1].isBlockOrientedTowardsEndpoint(endpoint_loc))
+#         self.assertFalse(root.children[2].isBlockOrientedTowardsEndpoint(endpoint_loc))
+                
+#     def test_complex_block_intersection(self):
+#         """Test complex multi-panel intersection with varied angles."""
+#         root = self.parsePanel("""<root>
+#                                         <panel size="5" thickness="0.5"/>
+#                                         <panel size="5" rotate="90" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="135" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="20" thickness="0.5"/>
+#                                         <panel size="5" attach-id="0" rotate="-40" thickness="0.5"/>
+#                                     </root>""")
+        
+#         problem_block = root.children[3]
+
+#         ordered_blocks = problem_block.getBlocksJoinedAtEndpointSortedCCW(0)
+#         self.assertEqual(ordered_blocks[0], root.children[3])
+#         self.assertEqual(ordered_blocks[1], root.children[1])
+#         self.assertEqual(ordered_blocks[2], root.children[2])
+#         self.assertEqual(ordered_blocks[3], root.children[0])
+#         self.assertEqual(ordered_blocks[4], root.children[4])
+        
+#         adjacent_block_neg = problem_block.getAdjacentBlock(ordered_blocks, -1, 0)
+#         self.assertEqual(adjacent_block_neg, root.children[1])
+#         adjacent_block_pos = problem_block.getAdjacentBlock(ordered_blocks, 1, 0)
+#         self.assertEqual(adjacent_block_pos, root.children[4])
+        
+#         p1, p2 = problem_block.getAdjacentBlockPoints(adjacent_block_neg, -1, 0)
+#         start_point, end_point = root.children[1].getBlockPoints(1)
+#         self.assertTrue((np.allclose(p1, start_point) and np.allclose(p2, end_point)) or 
+#                        (np.allclose(p1, end_point) and np.allclose(p2, start_point)))
+        
+#         p1, p2 = problem_block.getAdjacentBlockPoints(adjacent_block_pos, 1, 0)
+#         start_point, end_point = root.children[4].getBlockPoints(-1)
+#         self.assertTrue((np.allclose(p1, start_point) and np.allclose(p2, end_point)) or 
+#                        (np.allclose(p1, end_point) and np.allclose(p2, start_point)))
+
+
+# if __name__ == '__main__':
+#     unittest.main()
