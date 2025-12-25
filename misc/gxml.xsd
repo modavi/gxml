@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:vc="http://www.w3.org/2007/XMLSchema-versioning"
+           vc:minVersion="1.1">
+
+  <!-- Simple type for layout directions: vertical or horizontal -->
+  <xs:simpleType name="LayoutDirType">
+    <xs:annotation>
+      <xs:documentation>Defines layout direction options: 'vertical' or 'horizontal'.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="vertical"/>
+      <xs:enumeration value="horizontal"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Simple type for attach-point and pivot. Includes common points and '~' -->
+  <xs:simpleType name="AttachPointType">
+    <xs:annotation>
+      <xs:documentation>Defines various attach points on a panel: common points and '~' character.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="bottom-right"/>
+      <xs:enumeration value="bottom-left"/>
+      <xs:enumeration value="top-right"/>
+      <xs:enumeration value="top-left"/>
+      <xs:enumeration value="left-mid"/>
+      <xs:enumeration value="right-mid"/>
+      <xs:enumeration value="top-mid"/>
+      <xs:enumeration value="bottom-mid"/>
+      <xs:enumeration value="center"/>
+      <xs:enumeration value="~"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Complex type for region elements with optional id, layout-dir, offsets, size, width, and height attributes -->
+  <xs:complexType name="RegionType">
+    <xs:annotation>
+      <xs:documentation>This type defines a region with optional attributes: id, layout-dir, offsets, size, width, and height.</xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="region" type="RegionType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional unique identifier for the region.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="layout-dir" type="LayoutDirType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional layout direction for the region: vertical or horizontal.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="offsets" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Offsets in the format #,#,#,#, specifying Top, Right, Bottom, Left.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="size" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Combined size specification.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="width" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Width specification.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="height" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Height specification.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- Complex type for panels with shared size attributes -->
+  <xs:complexType name="PanelType">
+    <xs:annotation>
+      <xs:documentation>A panel with various optional attributes including nested regions and size attributes.</xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="region" type="RegionType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional unique identifier for the panel.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="rotate" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional rotation specification for the panel.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="layout-dir" type="LayoutDirType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional layout direction for the panel: vertical or horizontal.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="attach-point" type="AttachPointType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional attach point for the panel.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="pivot" type="AttachPointType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional pivot point for the panel.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="attach" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional attribute to define attachment to another component.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="anchor" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional attribute to define anchoring to another component.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="size" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Combined size specification.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="width" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Width specification.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="height" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Height specification.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- Root element definition -->
+  <xs:element name="root">
+    <xs:annotation>
+      <xs:documentation>The root element of the XML document.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="vars" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>Container for variables.</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:sequence>
+              <xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>Placeholder for any additional elements.</xs:documentation>
+                </xs:annotation>
+              </xs:any>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+
+        <!-- Panels element using the new PanelType type -->
+        <xs:element name="panels" maxOccurs="unbounded" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>Container for multiple panel elements.</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="panel" type="PanelType" maxOccurs="unbounded" minOccurs="0"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

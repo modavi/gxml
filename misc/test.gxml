@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="gxml.xsd">
+    <vars>
+        <k>42</k>
+    </vars>
+    <panels>
+        <panel id="morgan" layout-dir="horizontal" attach-point="bottom-right">
+            <region>
+                <region>
+                    <region size="2*"></region>
+                    <region size="*"></region>
+                    <region size="3"></region>
+                    <region size="*"></region>
+                </region>
+                <region>
+                    <region></region>
+                    <region></region>
+                </region>
+            </region>
+            <region>
+                <region>
+                    <region layout-dir="horizontal"></region>
+                    <region></region>
+                </region>
+                <region>
+                    <region></region>
+                    <region></region>
+                </region>
+            </region>
+        </panel>
+        <panel id="~" attach="~" size="k"></panel>
+        <panel id="davidson"></panel>
+    </panels>
+</root>
