@@ -3,9 +3,8 @@ Solvers for panel geometry and intersections.
 
 Pipeline:
 1. IntersectionSolver - finds where panel centerlines meet
-2. FaceSolver - determines face segmentation from intersection topology
-3. BoundsSolver - computes trim/gap adjustments, provides coordinate lookup
-4. GeometryBuilder - creates actual 3D geometry (polygons and caps)
+2. FaceSolver - determines face segmentation AND computes trim/gap adjustments
+3. GeometryBuilder - creates actual 3D geometry (polygons and caps)
 """
 
 from .gxml_intersection_solver import (
@@ -14,18 +13,14 @@ from .gxml_intersection_solver import (
     IntersectionType,
     Intersection,
     PanelEndpoint,
-    Axis,
+    PanelAxis,
 )
 
 from .gxml_face_solver import (
     FaceSolver,
-    FaceSolverResult,
-    FaceSolution,
-)
-
-from .gxml_bounds_solver import (
-    BoundsSolver,
-    BoundsSolution,
+    SegmentedPanel,
+    FaceSegment,
+    JointSide,
 )
 
 from .gxml_geometry_builder import (
@@ -40,13 +35,10 @@ __all__ = [
     'Intersection',
     'PanelEndpoint',
     'Axis',
-    # Stage 2: Face Solving
+    # Stage 2: Face Solving (combined face segmentation + bounds)
     'FaceSolver',
-    'FaceSolverResult',
-    'FaceSolution',
-    # Stage 3: Bounds Solving
-    'BoundsSolver',
-    'BoundsSolution',
-    # Stage 4: Geometry Building
+    'SegmentedPanel',
+    'FaceSegment',
+    # Stage 3: Geometry Building
     'GeometryBuilder',
 ]

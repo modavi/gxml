@@ -185,7 +185,7 @@ class JointTests(BaseIntegrationTest):
         - Combined joint mitering and crossing face trimming
         """
         xml_input = """<root>
-            <panel thickness="0.1"/>
+            <panel thickness="0.1"/>N
             <panel thickness="0.1" rotate="90"/>
             <panel thickness="0.1" rotate="90"/>
             <panel thickness="0.1" rotate="90"/>

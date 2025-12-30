@@ -3,7 +3,42 @@
            xmlns:vc="http://www.w3.org/2007/XMLSchema-versioning"
            vc:minVersion="1.1">
 
-  <!-- Simple type for layout directions: vertical or horizontal -->
+  <!-- ============================================================== -->
+  <!-- GXML Schema - Geometric XML Layout Language                    -->
+  <!-- ============================================================== -->
+  <!-- 
+    GXML is a declarative language for geometric layout, panel intersection
+    solving, and 3D geometry generation.
+    
+    Core Pipeline (4 stages):
+    1. IntersectionSolver - Finds where panel centerlines meet
+    2. FaceSolver - Determines face segmentation from intersection topology
+    3. BoundsSolver - Computes trim/gap adjustments for precise geometry
+    4. GeometryBuilder - Creates actual 3D geometry with proper mitering
+  -->
+
+  <!-- ============================================================== -->
+  <!-- Simple Types                                                   -->
+  <!-- ============================================================== -->
+
+  <!-- Layout scheme type for child element positioning -->
+  <xs:simpleType name="LayoutSchemeType">
+    <xs:annotation>
+      <xs:documentation>
+        Defines the layout scheme used for positioning child elements:
+        - construct: Elements connect end-to-end with rotation/attachment support
+        - stack: Elements stack within parent bounds with offsets
+        - fixed: Elements use explicit fixed positioning
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="construct"/>
+      <xs:enumeration value="stack"/>
+      <xs:enumeration value="fixed"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Layout direction type -->
   <xs:simpleType name="LayoutDirType">
     <xs:annotation>
       <xs:documentation>Defines layout direction options: 'vertical' or 'horizontal'.</xs:documentation>
@@ -14,159 +49,401 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- Simple type for attach-point and pivot. Includes common points and '~' -->
-  <xs:simpleType name="AttachPointType">
+  <!-- Axis type for primary/secondary axis specification -->
+  <xs:simpleType name="AxisType">
     <xs:annotation>
-      <xs:documentation>Defines various attach points on a panel: common points and '~' character.</xs:documentation>
+      <xs:documentation>
+        Defines the axis for directional operations:
+        - x: X-axis (default primary axis, start/end direction)
+        - y: Y-axis (default secondary axis, bottom/top direction)
+        - z: Z-axis (normal axis, back/front direction)
+      </xs:documentation>
     </xs:annotation>
     <xs:restriction base="xs:string">
-      <xs:enumeration value="bottom-right"/>
+      <xs:enumeration value="x"/>
+      <xs:enumeration value="y"/>
+      <xs:enumeration value="z"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Attach/anchor point type with named positions and inheritance marker -->
+  <xs:simpleType name="AttachPointType">
+    <xs:annotation>
+      <xs:documentation>
+        Defines attach/anchor points on a panel. Named positions map to normalized
+        coordinates on the panel face. The '~' character inherits from the previous element.
+        'auto' allows automatic anchor point calculation based on rotation angle.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <!-- Corner points -->
       <xs:enumeration value="bottom-left"/>
-      <xs:enumeration value="top-right"/>
+      <xs:enumeration value="bottom-right"/>
       <xs:enumeration value="top-left"/>
+      <xs:enumeration value="top-right"/>
+      <!-- Edge midpoints -->
+      <xs:enumeration value="left"/>
+      <xs:enumeration value="right"/>
+      <xs:enumeration value="top"/>
+      <xs:enumeration value="bottom"/>
       <xs:enumeration value="left-mid"/>
       <xs:enumeration value="right-mid"/>
       <xs:enumeration value="top-mid"/>
       <xs:enumeration value="bottom-mid"/>
+      <!-- Center -->
       <xs:enumeration value="center"/>
+      <!-- Special values -->
+      <xs:enumeration value="auto"/>
       <xs:enumeration value="~"/>
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- Complex type for region elements with optional id, layout-dir, offsets, size, width, and height attributes -->
+  <!-- Expression type - allows numbers, variables, or expressions -->
+  <xs:simpleType name="ExpressionType">
+    <xs:annotation>
+      <xs:documentation>
+        A value that can be a literal number, a variable reference, a math expression,
+        or the inheritance marker '~'. Examples: "1", "2.5", "k", "k*2", "~"
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string"/>
+  </xs:simpleType>
+
+  <!-- Size expression type - includes star notation for flexible sizing -->
+  <xs:simpleType name="SizeExpressionType">
+    <xs:annotation>
+      <xs:documentation>
+        Size specification supporting:
+        - Fixed values: "100", "2.5"
+        - Variable references: "k", "panelWidth"
+        - Star notation: "*" (equal share), "2*" (double share), "3*" (triple share)
+        - Expressions: "k*2", "width/2"
+        - Inheritance: "~" (use previous element's value)
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string"/>
+  </xs:simpleType>
+
+  <!-- ============================================================== -->
+  <!-- Complex Types                                                  -->
+  <!-- ============================================================== -->
+
+  <!-- Region type for hierarchical layout subdivision -->
   <xs:complexType name="RegionType">
     <xs:annotation>
-      <xs:documentation>This type defines a region with optional attributes: id, layout-dir, offsets, size, width, and height.</xs:documentation>
+      <xs:documentation>
+        A region defines a rectangular area within a panel that can be subdivided
+        into child regions. Regions use a flex-like layout system with star notation
+        for proportional sizing.
+      </xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="region" type="RegionType" minOccurs="0" maxOccurs="unbounded"/>
     </xs:sequence>
     <xs:attribute name="id" type="xs:string" use="optional">
       <xs:annotation>
-        <xs:documentation>Optional unique identifier for the region.</xs:documentation>
+        <xs:documentation>Unique identifier for referencing this region.</xs:documentation>
       </xs:annotation>
     </xs:attribute>
     <xs:attribute name="layout-dir" type="LayoutDirType" use="optional">
       <xs:annotation>
-        <xs:documentation>Optional layout direction for the region: vertical or horizontal.</xs:documentation>
+        <xs:documentation>
+          Direction to lay out child regions:
+          - horizontal: Children arranged left to right
+          - vertical: Children arranged top to bottom
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="size" type="SizeExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Combined size specification. Supports star notation (* for flex, 2* for double flex)
+          or fixed values in parent's layout direction.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="width" type="SizeExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Explicit width specification, overrides horizontal component of size.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="height" type="SizeExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Explicit height specification, overrides vertical component of size.</xs:documentation>
       </xs:annotation>
     </xs:attribute>
     <xs:attribute name="offsets" type="xs:string" use="optional">
       <xs:annotation>
-        <xs:documentation>Offsets in the format #,#,#,#, specifying Top, Right, Bottom, Left.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="size" type="xs:string" use="optional">
-      <xs:annotation>
-        <xs:documentation>Combined size specification.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="width" type="xs:string" use="optional">
-      <xs:annotation>
-        <xs:documentation>Width specification.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="height" type="xs:string" use="optional">
-      <xs:annotation>
-        <xs:documentation>Height specification.</xs:documentation>
+        <xs:documentation>
+          Margin offsets in the format "top,right,bottom,left" (CSS-style ordering).
+          Can be a single value for all sides, two values for vertical/horizontal,
+          or four values for each side individually.
+        </xs:documentation>
       </xs:annotation>
     </xs:attribute>
   </xs:complexType>
 
-  <!-- Complex type for panels with shared size attributes -->
+  <!-- Panel type - the primary geometric element -->
   <xs:complexType name="PanelType">
     <xs:annotation>
-      <xs:documentation>A panel with various optional attributes including nested regions and size attributes.</xs:documentation>
+      <xs:documentation>
+        A panel is a rectangular element with width, height, and optional thickness.
+        Panels have directionality (primary axis) and can be attached to other panels
+        to form larger structures. They support automatic intersection solving and
+        miter joint generation.
+        
+        Coordinate System:
+        - Primary axis (t): Along panel length (default X, start to end)
+        - Secondary axis (s): Along panel height (default Y, bottom to top)
+        - Normal axis (n): Panel facing direction (default Z, back to front)
+        
+        Panel Sides (with thickness):
+        - FRONT/BACK: Faces perpendicular to normal axis
+        - TOP/BOTTOM: Faces along the top/bottom edges
+        - START/END: Faces at the panel endpoints
+      </xs:documentation>
     </xs:annotation>
     <xs:sequence>
+      <xs:element name="panel" type="PanelType" minOccurs="0" maxOccurs="unbounded"/>
       <xs:element name="region" type="RegionType" minOccurs="0" maxOccurs="unbounded"/>
     </xs:sequence>
+
+    <!-- Identity -->
     <xs:attribute name="id" type="xs:string" use="optional">
       <xs:annotation>
-        <xs:documentation>Optional unique identifier for the panel.</xs:documentation>
+        <xs:documentation>
+          Unique identifier for the panel. Auto-generated as sequential index if not specified.
+          Use '#' in the id to include the auto-generated index (e.g., "wall-#" becomes "wall-0").
+        </xs:documentation>
       </xs:annotation>
     </xs:attribute>
-    <xs:attribute name="rotate" type="xs:string" use="optional">
+
+    <!-- Visibility -->
+    <xs:attribute name="visible" type="xs:boolean" use="optional" default="true">
       <xs:annotation>
-        <xs:documentation>Optional rotation specification for the panel.</xs:documentation>
+        <xs:documentation>Whether the panel and its children are visible.</xs:documentation>
       </xs:annotation>
     </xs:attribute>
+    <xs:attribute name="visible-self" type="xs:boolean" use="optional" default="true">
+      <xs:annotation>
+        <xs:documentation>Whether the panel itself is visible (children may still be visible).</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+
+    <!-- Layout scheme for children -->
+    <xs:attribute name="layout" type="LayoutSchemeType" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Layout scheme for positioning child elements:
+          - construct: Children connect end-to-end (default for panels)
+          - stack: Children stack with offsets within parent bounds
+          - fixed: Children use explicit positioning
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+
+    <!-- Sizing attributes -->
+    <xs:attribute name="size" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Combined size specification applied to the primary axis.
+          Can be a single value, comma-separated "width,height", or "width,height,depth".
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="width" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Panel width along the primary axis. Overrides size component.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="height" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Panel height along the secondary axis. Overrides size component.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="depth" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Panel depth along the normal axis. Overrides size component.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="thickness" type="ExpressionType" use="optional" default="0">
+      <xs:annotation>
+        <xs:documentation>
+          Panel thickness. Panels with thickness > 0 have 6 faces (front, back, top, bottom, start, end)
+          and participate in intersection solving for miter joints.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+
+    <!-- Transform attributes -->
+    <xs:attribute name="rotate" type="ExpressionType" use="optional" default="0">
+      <xs:annotation>
+        <xs:documentation>
+          Rotation angle in degrees around the pivot point. Positive rotation
+          follows right-hand rule around the secondary axis (typically Y).
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="pitch" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Rotation around the X axis in degrees.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="yaw" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Rotation around the Y axis in degrees.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="roll" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Rotation around the Z axis in degrees.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="offset" type="ExpressionType" use="optional" default="0">
+      <xs:annotation>
+        <xs:documentation>
+          Translation offset from the calculated attach position.
+          Can be a single value (applied to primary axis) or "x,y,z".
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="x" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>X-axis translation offset.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="y" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Y-axis translation offset.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="z" type="ExpressionType" use="optional">
+      <xs:annotation>
+        <xs:documentation>Z-axis translation offset.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+
+    <!-- Axis specification -->
+    <xs:attribute name="primary-axis" type="AxisType" use="optional" default="x">
+      <xs:annotation>
+        <xs:documentation>
+          The primary axis determines panel directionality (start/end direction).
+          Default is X. The secondary axis is automatically Y, and normal is Z.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+
+    <!-- Attachment attributes (construct layout) -->
+    <xs:attribute name="attach-id" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          ID of the panel to attach to. Defaults to the previous sibling panel.
+          Use '~' to explicitly reference the previous panel.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="attach-to" type="AttachPointType" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Point on the target panel where this panel attaches.
+          Common values: "right" (end of previous panel), "left", "top", "bottom".
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="attach-point" type="AttachPointType" use="optional" default="right">
+      <xs:annotation>
+        <xs:documentation>
+          Point on THIS panel that subsequent panels will attach to by default.
+          Defines where the "chain" continues.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="anchor-id" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          ID of a panel to anchor to (for length calculation).
+          When anchored, the panel stretches to reach the anchor point.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="anchor-to" type="AttachPointType" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Point on the anchor panel to stretch toward.
+          Use "auto" for automatic calculation based on rotation angle.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="anchor-point" type="AttachPointType" use="optional" default="auto">
+      <xs:annotation>
+        <xs:documentation>
+          Default anchor point on THIS panel for other panels anchoring to it.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="pivot" type="AttachPointType" use="optional" default="left">
+      <xs:annotation>
+        <xs:documentation>
+          The point around which rotation occurs. "left" means rotate around
+          the start of the panel, "center" rotates around the middle, etc.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+
+    <!-- Layout direction for child regions -->
     <xs:attribute name="layout-dir" type="LayoutDirType" use="optional">
       <xs:annotation>
-        <xs:documentation>Optional layout direction for the panel: vertical or horizontal.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="attach-point" type="AttachPointType" use="optional">
-      <xs:annotation>
-        <xs:documentation>Optional attach point for the panel.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="pivot" type="AttachPointType" use="optional">
-      <xs:annotation>
-        <xs:documentation>Optional pivot point for the panel.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="attach" type="xs:string" use="optional">
-      <xs:annotation>
-        <xs:documentation>Optional attribute to define attachment to another component.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="anchor" type="xs:string" use="optional">
-      <xs:annotation>
-        <xs:documentation>Optional attribute to define anchoring to another component.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="size" type="xs:string" use="optional">
-      <xs:annotation>
-        <xs:documentation>Combined size specification.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="width" type="xs:string" use="optional">
-      <xs:annotation>
-        <xs:documentation>Width specification.</xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="height" type="xs:string" use="optional">
-      <xs:annotation>
-        <xs:documentation>Height specification.</xs:documentation>
+        <xs:documentation>Layout direction for child regions (horizontal or vertical).</xs:documentation>
       </xs:annotation>
     </xs:attribute>
   </xs:complexType>
 
-  <!-- Root element definition -->
+  <!-- ============================================================== -->
+  <!-- Root Element                                                   -->
+  <!-- ============================================================== -->
+
   <xs:element name="root">
     <xs:annotation>
-      <xs:documentation>The root element of the XML document.</xs:documentation>
+      <xs:documentation>
+        The root element of a GXML document. Contains optional variable definitions
+        and panel elements. The root uses "construct" layout by default for its children.
+      </xs:documentation>
     </xs:annotation>
     <xs:complexType>
       <xs:sequence>
+        <!-- Variables container -->
         <xs:element name="vars" minOccurs="0">
           <xs:annotation>
-            <xs:documentation>Container for variables.</xs:documentation>
+            <xs:documentation>
+              Container for variable definitions. Variables can be referenced
+              in attribute expressions throughout the document. Each child element's
+              tag name becomes the variable name, and its text content is evaluated
+              as a Python expression.
+              
+              Example:
+              &lt;vars&gt;
+                &lt;width&gt;100&lt;/width&gt;
+                &lt;height&gt;width * 0.5&lt;/height&gt;
+              &lt;/vars&gt;
+            </xs:documentation>
           </xs:annotation>
           <xs:complexType>
             <xs:sequence>
-              <xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded">
-                <xs:annotation>
-                  <xs:documentation>Placeholder for any additional elements.</xs:documentation>
-                </xs:annotation>
-              </xs:any>
+              <xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
           </xs:complexType>
         </xs:element>
 
-        <!-- Panels element using the new PanelType type -->
-        <xs:element name="panels" maxOccurs="unbounded" minOccurs="0">
-          <xs:annotation>
-            <xs:documentation>Container for multiple panel elements.</xs:documentation>
-          </xs:annotation>
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="panel" type="PanelType" maxOccurs="unbounded" minOccurs="0"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
+        <!-- Panel elements directly under root -->
+        <xs:element name="panel" type="PanelType" minOccurs="0" maxOccurs="unbounded"/>
       </xs:sequence>
+
+      <!-- Root attributes -->
+      <xs:attribute name="layout" type="LayoutSchemeType" use="optional" default="construct">
+        <xs:annotation>
+          <xs:documentation>Layout scheme for child panels. Defaults to "construct".</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
     </xs:complexType>
   </xs:element>
 

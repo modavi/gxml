@@ -121,11 +121,11 @@ class GXMLPanel(GXMLLayoutElement):
                 all_panels.append(child)
         
         solution = IntersectionSolver.solve(all_panels)
-        face_result = FaceSolver.solve(solution)
+        panel_faces = FaceSolver.solve(solution)
         
         # Generate geometry for this panel only (not all panels in the solution)
         # Segments are added as dynamic children internally by build()
-        GeometryBuilder.build(self, face_result)
+        GeometryBuilder.build(self, panel_faces, solution)
             
         pop_perf_marker()
     
@@ -262,6 +262,41 @@ class GXMLPanel(GXMLLayoutElement):
             return [(0,0,1), (1,0,1), (1,1,1), (0,1,1)]
         else:
             raise ValueError(f"Invalid panel side: {side}")
+    
+    def get_face_point(self, face_side: 'PanelSide', t: float, s: float) -> np.ndarray:
+        """
+        Map (t, s) coordinates to a world-space point on a face.
+        
+        Args:
+            face_side: Which face of the panel
+            t: Position along primary axis (0 to 1)
+            s: Position along secondary axis (0 to 1)
+            
+        Returns:
+            World-space point on the face
+        """
+        half_thickness = self.thickness / 2
+        
+        if face_side == PanelSide.FRONT:
+            local = (t, s, half_thickness)
+        elif face_side == PanelSide.BACK:
+            local = (t, s, -half_thickness)
+        elif face_side == PanelSide.TOP:
+            z = -half_thickness + s * self.thickness
+            local = (t, 1.0, z)
+        elif face_side == PanelSide.BOTTOM:
+            z = -half_thickness + s * self.thickness
+            local = (t, 0.0, z)
+        elif face_side == PanelSide.START:
+            z = -half_thickness + t * self.thickness
+            local = (0.0, s, z)
+        elif face_side == PanelSide.END:
+            z = -half_thickness + t * self.thickness
+            local = (1.0, s, z)
+        else:
+            local = (t, s, 0.0)
+        
+        return self.transform_point(local)
     
     def get_primary_axis(self):
         """

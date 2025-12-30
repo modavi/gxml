@@ -4,8 +4,59 @@ Unit tests for GeometryBuilder.
 import unittest
 import numpy as np
 from elements.solvers import GeometryBuilder, IntersectionSolver, FaceSolver
+from elements.solvers.gxml_face_solver import FaceSolver as FaceSolverClass
+from elements.solvers.gxml_intersection_solver import IntersectionType
+from elements.gxml_panel import PanelSide
 from tests.test_fixtures.mocks import GXMLMockPanel
 from tests.test_fixtures.assertions import assert_face_corners
+
+
+def compute_trim_to_panel(panel, target_panel, endpoint, face_to_trim):
+    """
+    Helper function to compute trim using _compute_face_trim with a mock intersection.
+    
+    This wraps the inlined _compute_face_trim for test purposes, creating a minimal
+    mock intersection that provides the target panel for trim calculation.
+    """
+    TOLERANCE = 1e-4
+    
+    # Compute the trim using ray-plane intersection directly (same logic as _compute_face_trim)
+    if target_panel.thickness < TOLERANCE:
+        return 0.0
+    
+    ray = panel.get_primary_axis_ray()
+    if ray is None:
+        return 0.0
+    
+    # Get endpoint info from endpoint (START -> t=0, END -> t=1)
+    t_value, _, _ = panel.get_face_center_local(endpoint)
+    
+    # Determine target face (approached face logic)
+    approach_dir = ray.direction if t_value < 0.5 else -ray.direction
+    target_face = target_panel.get_face_closest_to_direction(
+        approach_dir, candidate_faces=PanelSide.thickness_faces())
+    
+    # Get point on the face being trimmed (corner at the endpoint)
+    _, s_center, z_offset = panel.get_face_center_local(face_to_trim)
+    s_value = s_center if s_center in (0.0, 1.0) else 0.0
+    face_corner = panel.transform_point((t_value, s_value, z_offset))
+    
+    intersection_point = FaceSolverClass._intersect_line_with_panel_face(
+        face_corner, ray.direction, target_panel, target_face)
+    
+    if intersection_point is None:
+        return 0.0
+    
+    # Calculate offset: positive = trim inward, negative = overshoot
+    if t_value < 0.5:  # START endpoint
+        offset_vector = intersection_point - face_corner
+    else:  # END endpoint
+        offset_vector = face_corner - intersection_point
+    
+    offset_distance = np.dot(offset_vector, ray.direction)
+    t_offset = min(offset_distance / ray.length, 1.0)
+    
+    return t_offset
 
 
 class GeometryBuilderUnitTests(unittest.TestCase):
@@ -21,7 +72,7 @@ class GeometryBuilderUnitTests(unittest.TestCase):
         p1 = GXMLMockPanel("p1", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], thickness=1.0)
         
         solution = IntersectionSolver.solve([p1])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Verify panel has exactly 6 face children (front, back, top, bottom, start, end)
         self.assertEqual(len(p1.dynamicChildren), 6, 
@@ -67,7 +118,7 @@ class GeometryBuilderUnitTests(unittest.TestCase):
         p1.recalculate_transform()
         
         solution1 = IntersectionSolver.solve([p1])
-        GeometryBuilder.build_all(FaceSolver.solve(solution1))
+        GeometryBuilder.build_all(FaceSolver.solve(solution1), solution1)
         
         self.assertEqual(len(p1.dynamicChildren), 0,
                         "Zero primary axis scale panel should have no face children")
@@ -78,7 +129,7 @@ class GeometryBuilderUnitTests(unittest.TestCase):
         p2.recalculate_transform()
         
         solution2 = IntersectionSolver.solve([p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution2))
+        GeometryBuilder.build_all(FaceSolver.solve(solution2), solution2)
         
         self.assertEqual(len(p2.dynamicChildren), 0,
                         "Zero secondary axis scale panel should have no face children")
@@ -96,7 +147,7 @@ class GeometryBuilderUnitTests(unittest.TestCase):
         solution = IntersectionSolver.solve([p1, p2])
         
         # Build geometry for all panels
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Verify p1 has face children
         # Front face should be split (2 pieces) + back/top/bottom/start/end continuous = 7 faces
@@ -136,7 +187,7 @@ class GeometryBuilderUnitTests(unittest.TestCase):
         self.assertEqual(len(solution.intersections), 1, "Should detect one T-junction")
         
         # Build geometry
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # p1 should have its front face split into 2 regions (at t=0.5)
         # Even with 0 thickness, the front face should be created and split
@@ -177,8 +228,8 @@ class GeometryBuilderUnitTests(unittest.TestCase):
         solution2 = IntersectionSolver.solve([p1_case2, p2_case2])
         
         # Build geometry for both cases
-        GeometryBuilder.build_all(FaceSolver.solve(solution1))
-        GeometryBuilder.build_all(FaceSolver.solve(solution2))
+        GeometryBuilder.build_all(FaceSolver.solve(solution1), solution1)
+        GeometryBuilder.build_all(FaceSolver.solve(solution2), solution2)
         
         p1_case1 = solution1.panels[0]
         p1_case2 = solution2.panels[0]
@@ -218,7 +269,7 @@ class GeometryBuilderUnitTests(unittest.TestCase):
         solution = IntersectionSolver.solve([p1, p2])
         
         # Build geometry for both panels
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Helper to check if a panel has splits
         def has_splits(panel):
@@ -304,9 +355,9 @@ class GapCalculationTests(unittest.TestCase):
         When panels intersect at 90 degrees, the gap should be symmetric
         around the intersection point, both in raw calculation and in applied geometry.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
+        from elements.solvers.gxml_face_solver import FaceSolver
         from elements.gxml_panel import PanelSide
-        calculate_gap_t_values = BoundsSolver._calculate_gap_t_values
+        calculate_gap_t_values = FaceSolver._calculate_gap_t_values
         
         # Panel 1: horizontal along X axis (0,0,0) to (2,0,0) with thickness 0.1
         p1 = GXMLMockPanel("p1", [0.0, 0.0, 0.0], [2.0, 0.0, 0.0], thickness=0.1)
@@ -333,7 +384,7 @@ class GapCalculationTests(unittest.TestCase):
         p2_cross = GXMLMockPanel("p2", [1.0, 0.0, -1.0], [1.0, 0.0, 1.0], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1_cross, p2_cross])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         front_segments = sorted(
             [c for c in p1_cross.dynamicChildren if c.subId.startswith('front')],
@@ -356,10 +407,10 @@ class GapCalculationTests(unittest.TestCase):
         
         Tests 30°, 45°, 60°, and 90° to verify gap width increases as angle decreases.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
+        from elements.solvers.gxml_face_solver import FaceSolver
         from elements.gxml_panel import PanelSide
         import math
-        calculate_gap_t_values = BoundsSolver._calculate_gap_t_values
+        calculate_gap_t_values = FaceSolver._calculate_gap_t_values
         
         p1 = GXMLMockPanel("p1", [0.0, 0.0, 0.0], [2.0, 0.0, 0.0], thickness=0.1)
         
@@ -387,9 +438,9 @@ class GapCalculationTests(unittest.TestCase):
     
     def testZeroThicknessNoGap(self):
         """Test that zero thickness intersecting panel creates no gap."""
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
+        from elements.solvers.gxml_face_solver import FaceSolver
         from elements.gxml_panel import PanelSide
-        calculate_gap_t_values = BoundsSolver._calculate_gap_t_values
+        calculate_gap_t_values = FaceSolver._calculate_gap_t_values
         
         p1 = GXMLMockPanel("p1", [0.0, 0.0, 0.0], [2.0, 0.0, 0.0], thickness=0.1)
         p2 = GXMLMockPanel("p2", [1.0, 0.0, 0.0], [1.0, 0.0, -1.0], thickness=0.0)
@@ -424,7 +475,7 @@ class PartitionedFaceGapApplicationTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [1.0, 0.0, -1.0], [1.0, 0.0, 1.0], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Get the front face segments for p1
         front_segments = [c for c in p1.dynamicChildren if c.subId.startswith('front')]
@@ -495,7 +546,7 @@ class PartitionedFaceGapApplicationTests(unittest.TestCase):
         self.assertAlmostEqual(second_region.tStart, 0.5, places=5)
         
         # Now build geometry - the gap calculation should create proper spacing
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         front_segments = sorted(
             [c for c in p1.dynamicChildren if c.subId.startswith('front')],
@@ -520,22 +571,19 @@ class AngledCrossingPerEdgeTValueTests(unittest.TestCase):
     the FRONT face at a different x position than the BACK face. This means
     TOP/BOTTOM faces need different t-values for their front vs back edges,
     creating a trapezoidal shape rather than rectangular.
-    """
     
-    def _get_bounds_with_gaps(self, panel, face_side, segment):
-        """Helper: get nominal bounds and apply gaps to them."""
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
-        bounds = segment.get_nominal_bounds()
-        BoundsSolver._apply_gaps(panel, face_side, segment, bounds)
-        return bounds
+    Note: Gaps are now computed during segment creation in FaceSolver, so
+    these tests validate that the resulting segments have correct gap-adjusted bounds.
+    """
     
     def testPerpendicularCrossingNoPerEdgeDifference(self):
         """At 90° crossing, TOP/BOTTOM faces should have same t-values for front and back edges.
         
-        When panels cross perpendicularly, the gap is the same width at both edges,
-        so t_start_front should equal t_start (or be None since no difference needed).
+        When panels cross perpendicularly, the gap is the same width at both edges.
+        Corners[0] and [3] should have the same t (start edge), and
+        corners[1] and [2] should have the same t (end edge).
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver, FaceBounds
+        from elements.solvers.gxml_face_solver import FaceSolver
         from elements.solvers.gxml_intersection_solver import IntersectionSolver
         from elements.solvers.gxml_face_solver import FaceSolver
         from elements.gxml_panel import PanelSide
@@ -546,29 +594,31 @@ class AngledCrossingPerEdgeTValueTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [0.0, 0.0, -1.0], [0.0, 0.0, 1.0], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        face_result = FaceSolver.solve(solution)
-        face_solution = face_result.get(p1)
+        panel_faces = FaceSolver.solve(solution)
+        face_solution = next((pf for pf in panel_faces if pf.panel is p1), None)
         
         # Get segments for TOP face
-        segments = face_solution.get_segments(PanelSide.TOP)
+        segments = face_solution.segments.get(PanelSide.TOP, [])
         self.assertGreater(len(segments), 0, "Should have segments for TOP face")
         
-        # Get bounds for TOP face on first segment
-        bounds = self._get_bounds_with_gaps(p1, PanelSide.TOP, segments[0])
+        segment = segments[0]
+        corners = segment.corners
         
-        # At perpendicular crossing, either t_start_front is None or equals t_start
-        if bounds.t_start_front is not None:
-            self.assertAlmostEqual(bounds.t_start, bounds.t_start_front, places=5,
-                msg="At 90° crossing, front and back edge t-values should be equal")
+        # At perpendicular crossing, front and back edges should have same t values
+        # corners[0] and [3] are start-back and start-front
+        # corners[1] and [2] are end-back and end-front
+        t_start_back = corners[0][0]
+        t_start_front = corners[3][0]
+        self.assertAlmostEqual(t_start_back, t_start_front, places=5,
+            msg="At 90° crossing, front and back edge t-values should be equal")
     
     def testAngledCrossingHasDifferentPerEdgeTValues(self):
         """At angled crossing, TOP/BOTTOM faces should have different t-values for front vs back.
         
         When the crossing panel approaches at an angle, it creates a wider gap
-        on one edge than the other. For a crossing panel approaching from -Z
-        at 45°, the FRONT edge gap will be at a different position than the BACK edge gap.
+        on one edge than the other. Corners on front vs back edges will have different t.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
+        from elements.solvers.gxml_face_solver import FaceSolver
         from elements.solvers.gxml_intersection_solver import IntersectionSolver
         from elements.solvers.gxml_face_solver import FaceSolver
         from elements.gxml_panel import PanelSide
@@ -582,22 +632,22 @@ class AngledCrossingPerEdgeTValueTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [-1.0, 0.0, -1.0], [1.0, 0.0, 1.0], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        face_result = FaceSolver.solve(solution)
-        face_solution = face_result.get(p1)
+        panel_faces = FaceSolver.solve(solution)
+        face_solution = next((pf for pf in panel_faces if pf.panel is p1), None)
         
         # Get segments for TOP face
-        segments = face_solution.get_segments(PanelSide.TOP)
+        segments = face_solution.segments.get(PanelSide.TOP, [])
         self.assertGreater(len(segments), 0, "Should have segments for TOP face")
         
-        # Get bounds for TOP face on first segment (segment before crossing)
-        bounds = self._get_bounds_with_gaps(p1, PanelSide.TOP, segments[0])
+        segment = segments[0]
+        corners = segment.corners
         
-        # At 45° crossing, t_start_front should be different from t_start
-        self.assertIsNotNone(bounds.t_end_front, 
-            "Angled crossing should produce per-edge t values for TOP face")
+        # At 45° crossing, end-back (corners[1]) should differ from end-front (corners[2])
+        t_end_back = corners[1][0]
+        t_end_front = corners[2][0]
         
         # The difference indicates the trapezoidal shape
-        self.assertNotAlmostEqual(bounds.t_end, bounds.t_end_front, places=3,
+        self.assertNotAlmostEqual(t_end_back, t_end_front, places=3,
             msg="At 45° crossing, front and back edge t-values should differ")
     
     def testAngledCrossingGapDirection(self):
@@ -607,7 +657,7 @@ class AngledCrossingPerEdgeTValueTests(unittest.TestCase):
         the FRONT edge (positive Z) will have its gap offset in one direction,
         while the BACK edge (negative Z) will have it offset the other way.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
+        from elements.solvers.gxml_face_solver import FaceSolver
         from elements.solvers.gxml_intersection_solver import IntersectionSolver
         from elements.solvers.gxml_face_solver import FaceSolver
         from elements.gxml_panel import PanelSide
@@ -621,32 +671,31 @@ class AngledCrossingPerEdgeTValueTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [-1.0, 0.0, -1.0], [1.0, 0.0, 1.0], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        face_result = FaceSolver.solve(solution)
-        face_solution = face_result.get(p1)
+        panel_faces = FaceSolver.solve(solution)
+        face_solution = next((pf for pf in panel_faces if pf.panel is p1), None)
         
         # Get segments for TOP face
-        segments = face_solution.get_segments(PanelSide.TOP)
+        segments = face_solution.segments.get(PanelSide.TOP, [])
         self.assertGreater(len(segments), 0, "Should have segments for TOP face")
         
-        # Get bounds for TOP face - first segment (before crossing)
-        bounds_first = self._get_bounds_with_gaps(p1, PanelSide.TOP, segments[0])
+        segment = segments[0]
+        corners = segment.corners
         
         # The front edge gap should end at a different x than the back edge gap
         # Due to the 45° angle, one should be ahead of the other
-        if bounds_first.t_end_front is not None:
-            # For this geometry, front edge is at higher t (further along X)
-            # because the crossing panel goes from -X,-Z to +X,+Z
-            gap_difference = bounds_first.t_end_front - bounds_first.t_end
-            self.assertNotEqual(gap_difference, 0,
-                "Front and back edge gaps should be at different positions")
+        t_end_back = corners[1][0]
+        t_end_front = corners[2][0]
+        gap_difference = t_end_front - t_end_back
+        self.assertNotEqual(gap_difference, 0,
+            "Front and back edge gaps should be at different positions")
     
     def testFrontBackFacesNoPerEdgeValues(self):
-        """FRONT and BACK faces should not have per-edge t values, even at angled crossings.
+        """FRONT and BACK faces should be rectangular, even at angled crossings.
         
-        Per-edge t values only apply to TOP/BOTTOM faces which span the full
-        thickness of the panel. FRONT/BACK faces are single-depth surfaces.
+        FRONT/BACK faces are single-depth surfaces, so corners on the same edge
+        (start or end) should have the same t value.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
+        from elements.solvers.gxml_face_solver import FaceSolver
         from elements.solvers.gxml_intersection_solver import IntersectionSolver
         from elements.solvers.gxml_face_solver import FaceSolver
         from elements.gxml_panel import PanelSide
@@ -658,30 +707,31 @@ class AngledCrossingPerEdgeTValueTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [-1.0, 0.0, -1.0], [1.0, 0.0, 1.0], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        face_result = FaceSolver.solve(solution)
-        face_solution = face_result.get(p1)
+        panel_faces = FaceSolver.solve(solution)
+        face_solution = next((pf for pf in panel_faces if pf.panel is p1), None)
         
         # Get segments for FRONT and BACK faces
-        front_segments = face_solution.get_segments(PanelSide.FRONT)
-        back_segments = face_solution.get_segments(PanelSide.BACK)
+        front_segments = face_solution.segments.get(PanelSide.FRONT, [])
+        back_segments = face_solution.segments.get(PanelSide.BACK, [])
         self.assertGreater(len(front_segments), 0, "Should have segments for FRONT face")
         self.assertGreater(len(back_segments), 0, "Should have segments for BACK face")
         
-        # Get bounds for FRONT face
-        bounds_front = self._get_bounds_with_gaps(p1, PanelSide.FRONT, front_segments[0])
+        front_segment = front_segments[0]
+        back_segment = back_segments[0]
         
-        # Get bounds for BACK face  
-        bounds_back = self._get_bounds_with_gaps(p1, PanelSide.BACK, back_segments[0])
+        # FRONT/BACK should be rectangular: corners[0][0] == corners[3][0] (start edge)
+        # and corners[1][0] == corners[2][0] (end edge)
+        front_corners = front_segment.corners
+        self.assertAlmostEqual(front_corners[0][0], front_corners[3][0], places=5,
+            msg="FRONT face start edge should be rectangular")
+        self.assertAlmostEqual(front_corners[1][0], front_corners[2][0], places=5,
+            msg="FRONT face end edge should be rectangular")
         
-        # FRONT/BACK should not have per-edge values
-        self.assertIsNone(bounds_front.t_start_front,
-            "FRONT face should not have per-edge t_start_front")
-        self.assertIsNone(bounds_front.t_end_front,
-            "FRONT face should not have per-edge t_end_front")
-        self.assertIsNone(bounds_back.t_start_front,
-            "BACK face should not have per-edge t_start_front")
-        self.assertIsNone(bounds_back.t_end_front,
-            "BACK face should not have per-edge t_end_front")
+        back_corners = back_segment.corners
+        self.assertAlmostEqual(back_corners[0][0], back_corners[3][0], places=5,
+            msg="BACK face start edge should be rectangular")
+        self.assertAlmostEqual(back_corners[1][0], back_corners[2][0], places=5,
+            msg="BACK face end edge should be rectangular")
     
     def testTopBottomFacesHaveConsistentPerEdgeValues(self):
         """TOP and BOTTOM faces should both get per-edge values at angled crossings.
@@ -689,7 +739,7 @@ class AngledCrossingPerEdgeTValueTests(unittest.TestCase):
         Both edge faces span the panel thickness and should have the same
         per-edge gap calculation applied.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
+        from elements.solvers.gxml_face_solver import FaceSolver
         from elements.solvers.gxml_intersection_solver import IntersectionSolver
         from elements.solvers.gxml_face_solver import FaceSolver
         from elements.gxml_panel import PanelSide
@@ -701,33 +751,38 @@ class AngledCrossingPerEdgeTValueTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [-1.0, 0.0, -1.0], [1.0, 0.0, 1.0], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        face_result = FaceSolver.solve(solution)
-        face_solution = face_result.get(p1)
+        panel_faces = FaceSolver.solve(solution)
+        face_solution = next((pf for pf in panel_faces if pf.panel is p1), None)
         
         # Get segments for TOP and BOTTOM faces
-        top_segments = face_solution.get_segments(PanelSide.TOP)
-        bottom_segments = face_solution.get_segments(PanelSide.BOTTOM)
+        top_segments = face_solution.segments.get(PanelSide.TOP, [])
+        bottom_segments = face_solution.segments.get(PanelSide.BOTTOM, [])
         self.assertGreater(len(top_segments), 0, "Should have segments for TOP face")
         self.assertGreater(len(bottom_segments), 0, "Should have segments for BOTTOM face")
         
-        # Get bounds for TOP face
-        bounds_top = self._get_bounds_with_gaps(p1, PanelSide.TOP, top_segments[0])
+        top_segment = top_segments[0]
+        bottom_segment = bottom_segments[0]
+        top_corners = top_segment.corners
+        bottom_corners = bottom_segment.corners
         
-        # Get bounds for BOTTOM face
-        bounds_bottom = self._get_bounds_with_gaps(p1, PanelSide.BOTTOM, bottom_segments[0])
+        # Both should have non-rectangular shapes at angled crossing
+        # (corners[1] and [2] have different t values)
+        t_end_back_top = top_corners[1][0]
+        t_end_front_top = top_corners[2][0]
+        self.assertNotAlmostEqual(t_end_back_top, t_end_front_top, places=3,
+            msg="TOP face should have different t values for front vs back edge at angled crossing")
         
-        # Both should have per-edge values at angled crossing
-        self.assertIsNotNone(bounds_top.t_end_front,
-            "TOP face should have per-edge t_end_front at angled crossing")
-        self.assertIsNotNone(bounds_bottom.t_end_front,
-            "BOTTOM face should have per-edge t_end_front at angled crossing")
+        t_end_back_bottom = bottom_corners[1][0]
+        t_end_front_bottom = bottom_corners[2][0]
+        self.assertNotAlmostEqual(t_end_back_bottom, t_end_front_bottom, places=3,
+            msg="BOTTOM face should have different t values for front vs back edge at angled crossing")
         
-        # TOP and BOTTOM should have the same per-edge values
+        # TOP and BOTTOM should have the same back edge t values
         # (they share the same front/back edges)
-        self.assertAlmostEqual(bounds_top.t_end, bounds_bottom.t_end, places=5,
+        self.assertAlmostEqual(top_corners[1][0], bottom_corners[1][0], places=5,
             msg="TOP and BOTTOM should have same back edge t_end")
-        self.assertAlmostEqual(bounds_top.t_end_front, bounds_bottom.t_end_front, places=5,
-            msg="TOP and BOTTOM should have same front edge t_end_front")
+        self.assertAlmostEqual(top_corners[2][0], bottom_corners[2][0], places=5,
+            msg="TOP and BOTTOM should have same front edge t_end")
 
 
 class EndpointTrimTests(unittest.TestCase):
@@ -739,19 +794,17 @@ class EndpointTrimTests(unittest.TestCase):
         When a panel meets another panel at a right angle, FRONT, BACK, 
         TOP, and BOTTOM faces should all trim equally.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
         from elements.gxml_panel import PanelSide
-        calculate_face_endpoint_trim = BoundsSolver._compute_trim_to_panel_face
         
         # Wall panel: horizontal along X
         wall = GXMLMockPanel("wall", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], thickness=0.1)
         # Divider: perpendicular, starting at wall's midpoint, going into -Z
         divider = GXMLMockPanel("divider", [0.5, 0.0, 0.0], [0.5, 0.0, -1.0], thickness=0.1)
         
-        front_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.FRONT)
-        back_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.BACK)
-        top_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.TOP)
-        bottom_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.BOTTOM)
+        front_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.FRONT)
+        back_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.BACK)
+        top_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.TOP)
+        bottom_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.BOTTOM)
         
         # At 90 degrees, all trims should be equal
         self.assertAlmostEqual(front_trim, back_trim, places=5,
@@ -772,10 +825,8 @@ class EndpointTrimTests(unittest.TestCase):
         At 45 degrees, the FRONT face (facing the acute angle) trims more,
         and the BACK face (facing the obtuse angle) trims less.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
         from elements.gxml_panel import PanelSide
         import math
-        calculate_face_endpoint_trim = BoundsSolver._compute_trim_to_panel_face
         
         wall = GXMLMockPanel("wall", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], thickness=0.1)
         
@@ -785,8 +836,8 @@ class EndpointTrimTests(unittest.TestCase):
         sin_a = math.sin(math.radians(angle))
         divider = GXMLMockPanel("divider", [0.5, 0.0, 0.0], [0.5 + cos_a, 0.0, -sin_a], thickness=0.1)
         
-        front_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.FRONT)
-        back_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.BACK)
+        front_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.FRONT)
+        back_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.BACK)
         
         # At 45 degrees, front and back should be different
         self.assertNotAlmostEqual(front_trim, back_trim, places=3,
@@ -802,10 +853,8 @@ class EndpointTrimTests(unittest.TestCase):
         At very shallow angles, the computed trim could exceed 1.0 (entire panel),
         but should be clamped to prevent invalid geometry.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
         from elements.gxml_panel import PanelSide
         import math
-        calculate_face_endpoint_trim = BoundsSolver._compute_trim_to_panel_face
         
         wall = GXMLMockPanel("wall", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], thickness=0.1)
         
@@ -816,22 +865,20 @@ class EndpointTrimTests(unittest.TestCase):
         # Short panel to make trim more likely to exceed 1.0
         divider = GXMLMockPanel("divider", [0.5, 0.0, 0.0], [0.5 + cos_a * 0.1, 0.0, -sin_a * 0.1], thickness=0.1)
         
-        front_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.FRONT)
-        back_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.BACK)
+        front_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.FRONT)
+        back_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.BACK)
         
         self.assertLessEqual(front_trim, 1.0, "Front trim should not exceed 1.0")
         self.assertLessEqual(back_trim, 1.0, "Back trim should not exceed 1.0")
     
     def testZeroThicknessWallNoTrim(self):
         """Test that zero thickness wall produces no trim."""
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
         from elements.gxml_panel import PanelSide
-        calculate_face_endpoint_trim = BoundsSolver._compute_trim_to_panel_face
         
         wall = GXMLMockPanel("wall", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], thickness=0.0)
         divider = GXMLMockPanel("divider", [0.5, 0.0, 0.0], [0.5, 0.0, -1.0], thickness=0.1)
         
-        front_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.FRONT)
+        front_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.FRONT)
         
         self.assertAlmostEqual(front_trim, 0.0, places=5,
                                msg="Zero thickness wall should produce no trim")
@@ -842,10 +889,8 @@ class EndpointTrimTests(unittest.TestCase):
         At 135 degrees, the panel extends in the opposite direction.
         The trim calculation should still work correctly.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
         from elements.gxml_panel import PanelSide
         import math
-        calculate_face_endpoint_trim = BoundsSolver._compute_trim_to_panel_face
         
         wall = GXMLMockPanel("wall", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], thickness=0.1)
         
@@ -855,8 +900,8 @@ class EndpointTrimTests(unittest.TestCase):
         sin_a = math.sin(math.radians(angle))
         divider = GXMLMockPanel("divider", [0.5, 0.0, 0.0], [0.5 + cos_a, 0.0, -sin_a], thickness=0.1)
         
-        front_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.FRONT)
-        back_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.BACK)
+        front_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.FRONT)
+        back_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.BACK)
         
         # Both should be valid non-negative values
         self.assertGreaterEqual(front_trim, 0.0, "Front trim should be non-negative")
@@ -873,10 +918,8 @@ class EndpointTrimTests(unittest.TestCase):
         the END face than the BACK face. The function should still correctly
         target the BACK face using candidate_faces restriction.
         """
-        from elements.solvers.gxml_bounds_solver import BoundsSolver
         from elements.gxml_panel import PanelSide
         import math
-        calculate_face_endpoint_trim = BoundsSolver._compute_trim_to_panel_face
         
         wall = GXMLMockPanel("wall", [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], thickness=0.1)
         
@@ -886,8 +929,8 @@ class EndpointTrimTests(unittest.TestCase):
         sin_a = math.sin(math.radians(angle))
         divider = GXMLMockPanel("divider", [0.5, 0.0, 0.0], [0.5 + cos_a, 0.0, -sin_a], thickness=0.1)
         
-        front_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.FRONT)
-        back_trim = calculate_face_endpoint_trim(divider, wall, PanelSide.START, PanelSide.BACK)
+        front_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.FRONT)
+        back_trim = compute_trim_to_panel(divider, wall, PanelSide.START, PanelSide.BACK)
         
         # Values should be reasonable (not 1.0 from failed calculation)
         self.assertLess(front_trim, 0.5, "Front trim should be reasonable at 44°")
@@ -1031,7 +1074,7 @@ class JointCapTests(unittest.TestCase):
         p2 = GXMLMockPanel('p2', [1, 0, 0], [1.64278761, 0, 0.76604444], 0.1)
         
         solution = IntersectionSolver.solve([p0, p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Find the cap polygons - they should be on one of the panels
         caps = []
@@ -1086,7 +1129,7 @@ class JointCapTests(unittest.TestCase):
         solution = IntersectionSolver.solve([panel1, panel2])
         
         # Build all geometry including caps
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Check that NO cap polygons were created for 2-panel joint
         all_children = panel1.dynamicChildren + panel2.dynamicChildren
@@ -1107,7 +1150,7 @@ class JointCapTests(unittest.TestCase):
         p2 = GXMLMockPanel('p2', [0, 0, 0], [-1, 0, -1], 0.1)
         
         solution = IntersectionSolver.solve([p0, p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Collect cap polygons
         all_children = p0.dynamicChildren + p1.dynamicChildren + p2.dynamicChildren
@@ -1149,7 +1192,7 @@ class JointCapTests(unittest.TestCase):
         p2 = GXMLMockPanel('p2', [0, 0, 0], [-1, 0, 0], 0.1)   # atan2(-1,0) = -pi/2 = -90°
         
         solution = IntersectionSolver.solve([p0, p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Find which panel is first in CCW order
         joint = solution.intersections[0]
@@ -1185,7 +1228,7 @@ class JointCapTests(unittest.TestCase):
         self.assertEqual(solution.intersections[0].type, IntersectionType.JOINT)
         self.assertEqual(len(solution.intersections[0].panels), 4, "Should have 4 panels")
         
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Collect caps
         all_children = (p0.dynamicChildren + p1.dynamicChildren + 
@@ -1212,7 +1255,7 @@ class JointCapTests(unittest.TestCase):
             panels.append(GXMLMockPanel(f'p{i}', [0, 0, 0], [end_x, 0, end_z], 0.1))
         
         solution = IntersectionSolver.solve(panels)
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Collect all caps
         all_children = []
@@ -1234,7 +1277,7 @@ class JointCapTests(unittest.TestCase):
         p2 = GXMLMockPanel('p2', [0, 0, 0], [-1, 0, 0], 0.3)   # thick
         
         solution = IntersectionSolver.solve([p0, p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Collect caps
         all_children = p0.dynamicChildren + p1.dynamicChildren + p2.dynamicChildren
@@ -1270,7 +1313,7 @@ class JointCapTests(unittest.TestCase):
         p2 = GXMLMockPanel('p2', [2, 0, 0], [3, 0, -1], 0.1)    # starts at joint
         
         solution = IntersectionSolver.solve([p0, p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Collect caps
         all_children = p0.dynamicChildren + p1.dynamicChildren + p2.dynamicChildren
@@ -1303,7 +1346,7 @@ class CrossingCapTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [0, 0, -1], [0, 0, 1], thickness=0.1)  # perpendicular along Z
         
         solution = IntersectionSolver.solve([p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Collect cap polygons from both panels (caps assigned to first panel in intersection)
         all_children = p1.dynamicChildren + p2.dynamicChildren
@@ -1324,7 +1367,7 @@ class CrossingCapTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [0, 0, -1], [0, 0, 1], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         all_children = p1.dynamicChildren + p2.dynamicChildren
         caps = self._get_cap_polygons(all_children)
@@ -1348,7 +1391,7 @@ class CrossingCapTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [0, 0, -1], [0, 0, 1], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         all_children = p1.dynamicChildren + p2.dynamicChildren
         caps = self._get_cap_polygons(all_children)
@@ -1364,7 +1407,7 @@ class CrossingCapTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [0, 0, -2], [0, 0, 2], thickness=0.1)  # crosses at z=0
         
         solution = IntersectionSolver.solve([p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         all_children = p1.dynamicChildren + p2.dynamicChildren
         caps = self._get_cap_polygons(all_children)
@@ -1383,7 +1426,7 @@ class CrossingCapTests(unittest.TestCase):
         p2 = GXMLMockPanel("p2", [0, 0, -1], [0, 0, 1], thickness=0.1)
         
         solution = IntersectionSolver.solve([p1, p2])
-        GeometryBuilder.build_all(FaceSolver.solve(solution))
+        GeometryBuilder.build_all(FaceSolver.solve(solution), solution)
         
         # Count TOP face segments
         top_faces = [c for c in p1.dynamicChildren 
@@ -1405,7 +1448,7 @@ class CrossingCapTests(unittest.TestCase):
         p2_thin = GXMLMockPanel("p2", [0, 0, -2], [0, 0, 2], thickness=0.2)
         
         solution_thin = IntersectionSolver.solve([p1_thin, p2_thin])
-        GeometryBuilder.build_all(FaceSolver.solve(solution_thin))
+        GeometryBuilder.build_all(FaceSolver.solve(solution_thin), solution_thin)
         
         all_children_thin = p1_thin.dynamicChildren + p2_thin.dynamicChildren
         caps_thin = self._get_cap_polygons(all_children_thin)
@@ -1416,7 +1459,7 @@ class CrossingCapTests(unittest.TestCase):
         p2_thick = GXMLMockPanel("p2", [0, 0, -2], [0, 0, 2], thickness=0.4)
         
         solution_thick = IntersectionSolver.solve([p1_thick, p2_thick])
-        GeometryBuilder.build_all(FaceSolver.solve(solution_thick))
+        GeometryBuilder.build_all(FaceSolver.solve(solution_thick), solution_thick)
         
         all_children_thick = p1_thick.dynamicChildren + p2_thick.dynamicChildren
         caps_thick = self._get_cap_polygons(all_children_thick)

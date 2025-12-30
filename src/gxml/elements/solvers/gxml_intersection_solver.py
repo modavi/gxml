@@ -74,7 +74,7 @@ from typing import List, Tuple, Optional, Dict
 import mathutils.gxml_math as GXMLMath
 
 if TYPE_CHECKING:
-    from elements.gxml_panel import GXMLPanel
+    from elements.gxml_panel import GXMLPanel, PanelSide
 
 
 # ============================================================================
@@ -96,7 +96,7 @@ SPATIAL_HASH_PRECISION = 6
 # DATA STRUCTURES
 # ============================================================================
 
-class Axis(Enum):
+class PanelAxis(Enum):
     """Which axis a partition operates on"""
     PRIMARY = 1    # Along panel length (t-parameter, x-axis in local space)
     SECONDARY = 2  # Along panel height (s-parameter, y-axis in local space)
@@ -128,7 +128,7 @@ class Region:
         intersection: The intersection that created this region's start boundary (None for t=0)
     """
     tStart: float = 0.0
-    childSubdivisionAxis: Optional[Axis] = None
+    childSubdivisionAxis: Optional[PanelAxis] = None
     children: Optional[List['Region']] = None
     intersection: Optional['Intersection'] = None
     
@@ -144,6 +144,56 @@ class Region:
         for child in self.children:
             leaves.extend(child.get_leaves())
         return leaves
+    
+    @dataclass
+    class LeafBounds:
+        """Bounds for a leaf region in the BSP tree."""
+        t_start: float
+        t_end: float
+        s_start: float
+        s_end: float
+        intersection: Optional['Intersection']
+    
+    def get_leaf_bounds(self) -> List['Region.LeafBounds']:
+        """
+        Get bounds for all leaf regions in this BSP tree.
+        
+        Each leaf represents a rectangular region with (t, s) bounds.
+        The intersection is the one that created the split leading to this leaf
+        (None for regions at t=0 or s=0 boundaries).
+        
+        Returns:
+            List of LeafBounds for each leaf region
+        """
+        results: List['Region.LeafBounds'] = []
+        
+        def collect(region: 'Region', t_start: float, t_end: float, 
+                   s_start: float, s_end: float) -> None:
+            if region.is_leaf():
+                results.append(Region.LeafBounds(
+                    t_start=t_start,
+                    t_end=t_end,
+                    s_start=s_start,
+                    s_end=s_end,
+                    intersection=region.intersection
+                ))
+                return
+            
+            children = region.children
+            for i, child in enumerate(children):
+                # Compute end boundary (next child's start, or 1.0 for last child)
+                if region.childSubdivisionAxis == PanelAxis.PRIMARY:
+                    child_t_start = child.tStart
+                    child_t_end = children[i + 1].tStart if i + 1 < len(children) else 1.0
+                    collect(child, child_t_start, child_t_end, s_start, s_end)
+                else:  # SECONDARY
+                    child_s_start = child.tStart  # tStart is overloaded for s-axis in secondary splits
+                    child_s_end = children[i + 1].tStart if i + 1 < len(children) else 1.0
+                    collect(child, t_start, t_end, child_s_start, child_s_end)
+        
+        collect(self, 0.0, 1.0, 0.0, 1.0)
+        return results
+
 
 @dataclass
 class Intersection:
@@ -154,7 +204,6 @@ class Intersection:
         type: What kind of intersection this is
         position: 3D centerline intersection point
         panels: All panels at this intersection (sorted CCW for joints/T-junctions)
-        regions_per_panel: BSP region structure for each panel at this intersection (None if not split)
     """
     
     @dataclass
@@ -184,12 +233,6 @@ class Intersection:
     type: IntersectionType
     position: np.ndarray
     panels: List[PanelEntry]
-    regions_per_panel: Dict[GXMLPanel, Optional[Region]] = None
-    
-    def __post_init__(self):
-        """Initialize regions_per_panel if not provided"""
-        if self.regions_per_panel is None:
-            self.regions_per_panel = {}
     
     def get_entry(self, panel: 'GXMLPanel') -> Optional[PanelEntry]:
         """Get the PanelEntry for a specific panel, or None if not in this intersection."""
@@ -202,6 +245,35 @@ class Intersection:
     def get_panels(self) -> List[GXMLPanel]:
         """Get list of GXMLPanel objects at this intersection"""
         return [p.panel for p in self.panels]
+
+    def get_affected_faces(self, panel: 'GXMLPanel', other_panel: 'GXMLPanel') -> List['PanelSide']:
+        """
+        Determine which faces of panel are affected by other_panel at this intersection.
+        
+        - Crossings affect all four lengthwise faces (FRONT, BACK, TOP, BOTTOM)
+        - T-junctions/joints only affect the approached face
+        
+        Args:
+            panel: The panel whose faces we're checking
+            other_panel: The panel creating the intersection
+            
+        Returns:
+            List of affected PanelSide values
+        """
+        from elements.gxml_panel import PanelSide
+        
+        if self.type == IntersectionType.CROSSING:
+            # Crossings affect all four lengthwise faces
+            return list(PanelSide.thickness_faces()) + list(PanelSide.edge_faces())
+        else:
+            # T-junctions and joints only affect the approached face
+            other_entry = self.get_entry(other_panel)
+            direction = other_panel.get_primary_axis()
+            if other_entry.t >= 0.5:
+                direction = -direction
+            approached = panel.get_face_closest_to_direction(
+                direction, candidate_faces=PanelSide.thickness_faces())
+            return [approached]
 
 # ============================================================================
 # INTERSECTION DISCOVERY AND SOLVING
@@ -252,11 +324,7 @@ class IntersectionSolver:
         for other_panel in intersecting_panels:
             if other_panel == panel:
                 continue
-                
-            # Get the other panel's start and end positions
-            other_start = other_panel.transform_point([0, 0, 0])
-            other_end = other_panel.transform_point([1, 0, 0])
-            
+              
             # Get the quad corners to determine height extent
             # Bottom corners: [t, 0, 0] and top corners: [t, 1, 0]
             other_bottom_start = other_panel.transform_point([0, 0, 0])
@@ -300,7 +368,7 @@ class IntersectionSolver:
         sorted_boundaries = sorted(s_boundaries)
             
         regions = [Region(tStart=s) for s in sorted_boundaries]
-        return Region(tStart=0.0, childSubdivisionAxis=Axis.SECONDARY, children=regions)
+        return Region(tStart=0.0, childSubdivisionAxis=PanelAxis.SECONDARY, children=regions)
 
     @staticmethod
     def _generate_regions(panel_t_values: Dict[GXMLPanel, float],
@@ -341,7 +409,7 @@ class IntersectionSolver:
                     # No height mismatch - simple primary axis split
                     regions_per_panel[panel] = Region(
                         tStart=0.0,
-                        childSubdivisionAxis=Axis.PRIMARY,
+                        childSubdivisionAxis=PanelAxis.PRIMARY,
                         children=[
                             Region(tStart=0.0),
                             Region(tStart=t, intersection=intersection)
@@ -356,7 +424,7 @@ class IntersectionSolver:
                             # First region (bottom) - add primary split at crossing point
                             secondary_regions.append(Region(
                                 tStart=s_boundary.tStart,
-                                childSubdivisionAxis=Axis.PRIMARY,
+                                childSubdivisionAxis=PanelAxis.PRIMARY,
                                 children=[
                                     Region(tStart=0.0),
                                     Region(tStart=t, intersection=intersection)
@@ -368,14 +436,14 @@ class IntersectionSolver:
                     
                     regions_per_panel[panel] = Region(
                         tStart=0.0,
-                        childSubdivisionAxis=Axis.SECONDARY,
+                        childSubdivisionAxis=PanelAxis.SECONDARY,
                         children=secondary_regions
                     )
         
         return regions_per_panel
     
     @staticmethod
-    def _merge_regions(intersections: List[Intersection]) -> Dict[GXMLPanel, Optional[Region]]:
+    def _merge_regions(intersection_regions: List[Tuple[Intersection, Dict[GXMLPanel, Optional[Region]]]]) -> Dict[GXMLPanel, Optional[Region]]:
         """
         Merge per-intersection region structures into unified BSP trees per panel.
         
@@ -384,22 +452,22 @@ class IntersectionSolver:
         into a single BSP tree for geometry generation.
         
         Args:
-            intersections: All discovered intersections with local region data
+            intersection_regions: List of (intersection, regions_per_panel) tuples
             
         Returns:
             Dict mapping each panel to its unified region structure
         """
         # Collect all split points per panel per axis, with their causing intersections
         # Dict[panel, Dict[axis, Dict[t_value, intersection]]]
-        panel_splits: Dict[GXMLPanel, Dict[Axis, Dict[float, 'Intersection']]] = {}
+        panel_splits: Dict[GXMLPanel, Dict[PanelAxis, Dict[float, 'Intersection']]] = {}
         
-        for intersection in intersections:
-            for panel, region in intersection.regions_per_panel.items():
+        for intersection, regions_per_panel in intersection_regions:
+            for panel, region in regions_per_panel.items():
                 if region is None:
                     continue
                     
                 if panel not in panel_splits:
-                    panel_splits[panel] = {Axis.PRIMARY: {}, Axis.SECONDARY: {}}
+                    panel_splits[panel] = {PanelAxis.PRIMARY: {}, PanelAxis.SECONDARY: {}}
                 
                 # Extract split points from this region structure
                 IntersectionSolver._collect_splits(region, panel_splits[panel], intersection)
@@ -409,21 +477,21 @@ class IntersectionSolver:
         for panel, splits_by_axis in panel_splits.items():
             # Sort and build unified structure
             # For now, we only support PRIMARY axis (SECONDARY merging is complex)
-            primary_splits = splits_by_axis[Axis.PRIMARY]
+            primary_splits = splits_by_axis[PanelAxis.PRIMARY]
             sorted_t_values = sorted(primary_splits.keys())
             if len(sorted_t_values) > 1:  # Need at least start + one split
                 regions = [
                     Region(tStart=t, intersection=primary_splits.get(t))
                     for t in sorted_t_values
                 ]
-                unified[panel] = Region(tStart=0.0, childSubdivisionAxis=Axis.PRIMARY, children=regions)
+                unified[panel] = Region(tStart=0.0, childSubdivisionAxis=PanelAxis.PRIMARY, children=regions)
             else:
                 unified[panel] = None
         
         return unified
     
     @staticmethod
-    def _collect_splits(region: Region, splits_by_axis: Dict[Axis, Dict[float, 'Intersection']], fallback_intersection: 'Intersection') -> None:
+    def _collect_splits(region: Region, splits_by_axis: Dict[PanelAxis, Dict[float, 'Intersection']], fallback_intersection: 'Intersection') -> None:
         """
         Recursively collect all split points from a region structure.
         
@@ -519,6 +587,7 @@ class IntersectionSolver:
         
         # Finalize intersections from collected data
         intersections = []
+        intersection_regions: List[Tuple[Intersection, Dict[GXMLPanel, Optional[Region]]]] = []
         for pos_key, data in intersection_data.items():
             panel_t_values = data['panel_t_values']
             
@@ -564,12 +633,11 @@ class IntersectionSolver:
             # Create intersection with PanelEntry objects in sorted order
             participating = [Intersection.PanelEntry(panel, unique_panels[panel]) for panel in sorted_panels]
             
-            # Create intersection first (without regions)
+            # Create intersection
             intersection = Intersection(
                 type=intersection_type,
                 position=position,
-                panels=participating,
-                regions_per_panel={}
+                panels=participating
             )
             
             # Generate regions for panels that get split (now with intersection reference)
@@ -577,13 +645,11 @@ class IntersectionSolver:
                 unique_panels, sorted_panels, position, intersection
             )
             
-            # Update intersection with generated regions
-            intersection.regions_per_panel = regions_per_panel
-            
             intersections.append(intersection)
+            intersection_regions.append((intersection, regions_per_panel))
         
         # Merge per-intersection regions into unified BSP trees
-        unified_regions = IntersectionSolver._merge_regions(intersections)
+        unified_regions = IntersectionSolver._merge_regions(intersection_regions)
         
         return IntersectionSolution(
             panels=panels,
