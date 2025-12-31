@@ -66,35 +66,32 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- Attach/anchor point type with named positions and inheritance marker -->
+  <!-- Attach/span point type with named positions and special values -->
   <xs:simpleType name="AttachPointType">
     <xs:annotation>
       <xs:documentation>
-        Defines attach/anchor points on a panel. Named positions map to normalized
-        coordinates on the panel face. The '~' character inherits from the previous element.
-        'auto' allows automatic anchor point calculation based on rotation angle.
+        Defines attach/span points on a panel. Can be:
+        
+        Named positions (map to normalized 0-1 coordinates):
+        - Edge sides: "left" (0,0.5), "right" (1,0.5), "top" (0.5,1), "bottom" (0.5,0)
+        - Corners: "top-left" (0,1), "top-right" (1,1), "bottom-left" (0,0), "bottom-right" (1,0)
+        - Center: "center" (0.5,0.5)
+        - Depth: "front" (z=0), "back" (z=1)
+        
+        Numeric values (0-1 normalized coordinates):
+        - Single value: "0.5" (along primary axis)
+        - Two values: "0.5,0.75" (primary, secondary axis)
+        - Three values: "0.5,0.75,0" (x, y, z)
+        
+        Special values:
+        - "auto": For span-point, automatically calculates intersection point
+                  by projecting a ray from the attach point in the panel's
+                  rotation direction to find where it intersects the span target.
+        - "~": Inherit from previous element
       </xs:documentation>
     </xs:annotation>
     <xs:restriction base="xs:string">
-      <!-- Corner points -->
-      <xs:enumeration value="bottom-left"/>
-      <xs:enumeration value="bottom-right"/>
-      <xs:enumeration value="top-left"/>
-      <xs:enumeration value="top-right"/>
-      <!-- Edge midpoints -->
-      <xs:enumeration value="left"/>
-      <xs:enumeration value="right"/>
-      <xs:enumeration value="top"/>
-      <xs:enumeration value="bottom"/>
-      <xs:enumeration value="left-mid"/>
-      <xs:enumeration value="right-mid"/>
-      <xs:enumeration value="top-mid"/>
-      <xs:enumeration value="bottom-mid"/>
-      <!-- Center -->
-      <xs:enumeration value="center"/>
-      <!-- Special values -->
-      <xs:enumeration value="auto"/>
-      <xs:enumeration value="~"/>
+      <!-- This is intentionally xs:string to allow numeric values like "0.5" -->
     </xs:restriction>
   </xs:simpleType>
 
@@ -334,6 +331,14 @@
     </xs:attribute>
 
     <!-- Attachment attributes (construct layout) -->
+    <xs:attribute name="attach" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Shorthand for attach-id and attach-point combined as "id:point".
+          Examples: "wall:right", "header:0.5", ":center" (uses previous panel).
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
     <xs:attribute name="attach-id" type="xs:string" use="optional">
       <xs:annotation>
         <xs:documentation>
@@ -342,50 +347,66 @@
         </xs:documentation>
       </xs:annotation>
     </xs:attribute>
-    <xs:attribute name="attach-to" type="AttachPointType" use="optional">
+    <xs:attribute name="attach-point" type="AttachPointType" use="optional" default="right">
       <xs:annotation>
         <xs:documentation>
-          Point on the target panel where this panel attaches.
+          Point on the TARGET panel where this panel attaches.
           Common values: "right" (end of previous panel), "left", "top", "bottom".
         </xs:documentation>
       </xs:annotation>
     </xs:attribute>
-    <xs:attribute name="attach-point" type="AttachPointType" use="optional" default="right">
+    <xs:attribute name="attach-point-self" type="AttachPointType" use="optional">
       <xs:annotation>
         <xs:documentation>
-          Point on THIS panel that subsequent panels will attach to by default.
-          Defines where the "chain" continues.
+          Point on THIS panel where the connection originates. Affects the pivot
+          point for rotation. If not set, defaults to "left" (start of panel).
         </xs:documentation>
       </xs:annotation>
     </xs:attribute>
-    <xs:attribute name="anchor-id" type="xs:string" use="optional">
+
+    <!-- Spanning attributes (construct layout) - determines panel sizing -->
+    <xs:attribute name="span" type="xs:string" use="optional">
       <xs:annotation>
         <xs:documentation>
-          ID of a panel to anchor to (for length calculation).
-          When anchored, the panel stretches to reach the anchor point.
+          Shorthand for span-id and span-point combined as "id:point".
+          Examples: "wall:left", "root:0.5", ":auto" (uses previous panel).
         </xs:documentation>
       </xs:annotation>
     </xs:attribute>
-    <xs:attribute name="anchor-to" type="AttachPointType" use="optional">
+    <xs:attribute name="span-id" type="xs:string" use="optional">
       <xs:annotation>
         <xs:documentation>
-          Point on the anchor panel to stretch toward.
-          Use "auto" for automatic calculation based on rotation angle.
+          ID of a panel to span to (for length calculation).
+          When set, the panel stretches to reach the span point.
         </xs:documentation>
       </xs:annotation>
     </xs:attribute>
-    <xs:attribute name="anchor-point" type="AttachPointType" use="optional" default="auto">
+    <xs:attribute name="span-point" type="AttachPointType" use="optional">
       <xs:annotation>
         <xs:documentation>
-          Default anchor point on THIS panel for other panels anchoring to it.
+          Point on the TARGET span panel to stretch toward.
+          Use "auto" to automatically calculate the intersection point by casting
+          a ray from the attach point in the panel's rotation direction. This finds
+          where the panel would naturally intersect the span target based on its angle.
         </xs:documentation>
       </xs:annotation>
     </xs:attribute>
+    <xs:attribute name="span-point-self" type="AttachPointType" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Point on THIS panel used for sizing reference. Determines which
+          part of this panel should reach the span target.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+
+    <!-- Pivot point (can be set explicitly or via attach-point-self) -->
     <xs:attribute name="pivot" type="AttachPointType" use="optional" default="left">
       <xs:annotation>
         <xs:documentation>
           The point around which rotation occurs. "left" means rotate around
           the start of the panel, "center" rotates around the middle, etc.
+          If attach-point-self is set and pivot is not, attach-point-self determines the pivot.
         </xs:documentation>
       </xs:annotation>
     </xs:attribute>

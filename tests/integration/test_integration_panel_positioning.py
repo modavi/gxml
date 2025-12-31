@@ -132,7 +132,7 @@ class PanelAttachmentXMLTests(BaseIntegrationTest):
         
         root = self.parsePanel('''<root>
             <panel/>
-            <panel rotate="90" span-self="0.5"/>
+            <panel rotate="90" span-point-self="0.5"/>
             <panel attach-id="0" attach-point="0.5" span-id="1"/>
         </root>''')
         assert_corner_points(self, root.children[2], [0.5,0,0], [1.0,0,-0.5], [1.0,1.0,-0.5], [0.5,1.0,0])

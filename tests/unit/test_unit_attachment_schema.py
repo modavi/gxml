@@ -2,8 +2,8 @@
 Unit tests for the panel attachment schema.
 
 This file tests the attribute naming convention for panel attachments and spanning:
-- attach-id, attach-self, attach-point: Positioning relationship (where I connect)
-- span-id, span-self, span-point: Sizing relationship (what determines my size)
+- attach-id, attach-point-self, attach-point: Positioning relationship (where I connect)
+- span-id, span-point-self, span-point: Sizing relationship (what determines my size)
 - Shorthand syntax: attach="parent:right", span="root:left"
 
 Schema principles:
@@ -197,8 +197,8 @@ class AttachPointTests(unittest.TestCase):
         self.assertAlmostEqual(p2.attachOffset[1], 0.0, places=5)
 
 
-class AttachSelfTests(unittest.TestCase):
-    """Tests for attach-self attribute - where on THIS panel the connection originates."""
+class AttachPointSelfTests(unittest.TestCase):
+    """Tests for attach-point-self attribute - where on THIS panel the connection originates."""
     
     def setUp(self):
         self.layout = GXMLConstructLayout()
@@ -207,8 +207,8 @@ class AttachSelfTests(unittest.TestCase):
         for panel in panels:
             self.layout.apply_default_layout_properties(panel)
     
-    def test_attach_self_right(self):
-        """attach-self='right' should set pivot to (1, 0, 0)."""
+    def test_attach_point_self_right(self):
+        """attach-point-self='right' should set pivot to (1, 0, 0)."""
         p1 = GXMLMockPanel("p1")
         p2 = GXMLMockPanel("p2")
         self._setup_panels(p1, p2)
@@ -216,14 +216,14 @@ class AttachSelfTests(unittest.TestCase):
         ctx = GXMLMockParsingContext()
         ctx.elementMap = {"p1": p1, "p2": p2}
         ctx.prevElem = p1
-        ctx.setAttribute("attach-self", "right")
+        ctx.setAttribute("attach-point-self", "right")
         
         self.layout.parse_layout_attributes(p2, ctx)
         
         self.assertAlmostEqual(p2.transform.pivot[0], 1.0, places=5)
     
-    def test_attach_self_center(self):
-        """attach-self='center' should set pivot to (0.5, 0.5, 0)."""
+    def test_attach_point_self_center(self):
+        """attach-point-self='center' should set pivot to (0.5, 0.5, 0)."""
         p1 = GXMLMockPanel("p1")
         p2 = GXMLMockPanel("p2")
         self._setup_panels(p1, p2)
@@ -231,7 +231,7 @@ class AttachSelfTests(unittest.TestCase):
         ctx = GXMLMockParsingContext()
         ctx.elementMap = {"p1": p1, "p2": p2}
         ctx.prevElem = p1
-        ctx.setAttribute("attach-self", "center")
+        ctx.setAttribute("attach-point-self", "center")
         
         self.layout.parse_layout_attributes(p2, ctx)
         
@@ -324,8 +324,8 @@ class SpanPointTests(unittest.TestCase):
         self.assertTrue(p2.spanOffset.auto)
 
 
-class SpanSelfTests(unittest.TestCase):
-    """Tests for span-self attribute - where on THIS panel for sizing."""
+class SpanPointSelfTests(unittest.TestCase):
+    """Tests for span-point-self attribute - where on THIS panel for sizing."""
     
     def setUp(self):
         self.layout = GXMLConstructLayout()
@@ -334,8 +334,8 @@ class SpanSelfTests(unittest.TestCase):
         for panel in panels:
             self.layout.apply_default_layout_properties(panel)
     
-    def test_span_self_sets_local_sizing_point(self):
-        """span-self='left' should set spanSelfOffset to (0, 0, 0)."""
+    def test_span_point_self_sets_local_sizing_point(self):
+        """span-point-self='left' should set spanSelfOffset to (0, 0, 0)."""
         p1 = GXMLMockPanel("p1")
         p2 = GXMLMockPanel("p2")
         self._setup_panels(p1, p2)
@@ -344,7 +344,7 @@ class SpanSelfTests(unittest.TestCase):
         ctx.elementMap = {"p1": p1, "p2": p2}
         ctx.prevElem = p1
         ctx.setAttribute("span-id", "p1")
-        ctx.setAttribute("span-self", "left")
+        ctx.setAttribute("span-point-self", "left")
         ctx.setAttribute("span-point", "right")
         
         self.layout.parse_layout_attributes(p2, ctx)

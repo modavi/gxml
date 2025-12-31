@@ -517,8 +517,8 @@ class AttachmentAttributeParsingTests(unittest.TestCase):
     """Tests for parsing attachment-related attributes.
     
     The attachment schema uses:
-    - attach-id, attach-self, attach-point: Positioning (where I connect)
-    - span-id, span-self, span-point: Sizing (what determines my size)
+    - attach-id, attach-point-self, attach-point: Positioning (where I connect)
+    - span-id, span-point-self, span-point: Sizing (what determines my size)
     - Shorthand: attach="id:point", span="id:point"
     """
     
@@ -557,11 +557,11 @@ class AttachmentAttributeParsingTests(unittest.TestCase):
         
         self.assertEqual(result.children[1].id, "p2")
     
-    def test_parse_attach_self(self):
-        """Test parsing attach-self attribute."""
+    def test_parse_attach_point_self(self):
+        """Test parsing attach-point-self attribute."""
         xml = '''<root>
             <panel id="p1"/>
-            <panel id="p2" attach-self="center"/>
+            <panel id="p2" attach-point-self="center"/>
         </root>'''
         
         result = GXMLParser.parse(xml)
@@ -592,11 +592,11 @@ class AttachmentAttributeParsingTests(unittest.TestCase):
         
         self.assertEqual(result.children[1].id, "p2")
     
-    def test_parse_span_self(self):
-        """Test parsing span-self attribute."""
+    def test_parse_span_point_self(self):
+        """Test parsing span-point-self attribute."""
         xml = '''<root>
             <panel id="p1"/>
-            <panel id="p2" span-id="p1" span-self="left" span-point="right"/>
+            <panel id="p2" span-id="p1" span-point-self="left" span-point="right"/>
         </root>'''
         
         result = GXMLParser.parse(xml)

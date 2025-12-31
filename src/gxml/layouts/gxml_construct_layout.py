@@ -108,23 +108,23 @@ class GXMLConstructLayout(GXMLBaseLayout):
         else:
             # attach-point sets the inheritance default (for when no attach-id, it's purely declarative)
             element.attachStr = ctx.getAttribute("attach-point", "right")
-        element.spanStr = ctx.getAttribute("span-self", None) or "auto"  # Span default, or explicit override
+        element.spanStr = ctx.getAttribute("span-point-self", None) or "auto"  # Span default, or explicit override
         
         # Parse offsets
         element.attachOffset = GXMLParsingUtils.parse_offset_vector(attachPointStr, ctx, element.primaryAxis, element.secondaryAxis)
         element.spanOffset = GXMLParsingUtils.parse_offset_vector(spanPointStr, ctx, element.primaryAxis, element.secondaryAxis)
         
-        # Parse attach-self (where on THIS panel to connect from) - affects pivot
-        attachSelfStr = ctx.getAttribute("attach-self", None)
+        # Parse attach-point-self (where on THIS panel to connect from) - affects pivot
+        attachSelfStr = ctx.getAttribute("attach-point-self", None)
         pivotStr = ctx.getAttribute("pivot", None)
         if attachSelfStr and not pivotStr:
-            # attach-self sets the pivot if pivot isn't explicitly set
+            # attach-point-self sets the pivot if pivot isn't explicitly set
             element.transform.pivot = GXMLParsingUtils.parse_offset_vector(attachSelfStr, ctx, element.primaryAxis, element.secondaryAxis)
         else:
             element.transform.pivot = GXMLParsingUtils.parse_offset_vector(pivotStr or "left", ctx, element.primaryAxis, element.secondaryAxis)
         
-        # Parse span-self (where on THIS panel for sizing reference)
-        spanSelfStr = ctx.getAttribute("span-self", None)
+        # Parse span-point-self (where on THIS panel for sizing reference)
+        spanSelfStr = ctx.getAttribute("span-point-self", None)
         if spanSelfStr:
             element.spanSelfOffset = GXMLParsingUtils.parse_offset_vector(spanSelfStr, ctx, element.primaryAxis, element.secondaryAxis)
         else:
