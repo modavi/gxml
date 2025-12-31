@@ -17,10 +17,10 @@ from tests.test_fixtures.assertions import assert_corner_points
 
 
 class PanelAttachmentXMLTests(BaseIntegrationTest):
-    """Integration tests for panel attachment and anchoring system.
+    """Integration tests for panel attachment and span system.
     
     Tests the complete attachment system including implicit/explicit attachment,
-    attach-to/attach-point positioning, anchor elements, and anchor-to points.
+    attach-point positioning, span elements, and span-point positions.
     """
     
     def setUp(self):
@@ -85,10 +85,10 @@ class PanelAttachmentXMLTests(BaseIntegrationTest):
         assert_corner_points(self, root.children[1], [0,0,0], [0,0,-1], [0,1,-1], [0,1,0])
     
     def testAttachToPointAlongPrimaryAxis(self):
-        """Test attach-to specifies position along parent's primary axis."""
+        """Test attach-point specifies position along parent's primary axis."""
         root = self.parsePanel('''<root>
             <panel/>
-            <panel attach-to="0.5"/>
+            <panel attach-point="0.5"/>
         </root>''')
         assert_corner_points(self, root.children[1], [0.5,0,0], [1.5,0,0], [1.5,1.0,0], [0.5,1.0,0])
     
@@ -112,47 +112,47 @@ class PanelAttachmentXMLTests(BaseIntegrationTest):
         block2_start = root.children[1].transform.transform_point((0, 0, 0))
         self.assertTrue(np.allclose(block1_end, block2_start))
     
-    def testAnchorToElement(self):
-        """Test anchor-id causes panel to orient toward anchor element."""
+    def testSpanToElement(self):
+        """Test span-id causes panel to orient toward span element."""
         root = self.parsePanel('''<root>
             <panel/>
             <panel rotate="90"/>
-            <panel anchor-id="0"/>
+            <panel span-id="0"/>
         </root>''')
         assert_corner_points(self, root.children[2], [1,0,-1], [0,0,0], [0,1,0], [1,1,-1])
     
-    def testAnchorToSpecificPoint(self):
-        """Test anchor-to specifies position on anchor element."""
+    def testSpanToSpecificPoint(self):
+        """Test span-point specifies position on span element."""
         root = self.parsePanel('''<root>
             <panel/>
             <panel rotate="90"/>
-            <panel attach-id="0" attach-to="0.5" anchor-id="1" anchor-to="0.5"/>
+            <panel attach-id="0" attach-point="0.5" span-id="1" span-point="0.5"/>
         </root>''')
         assert_corner_points(self, root.children[2], [0.5,0,0], [1.0,0,-0.5], [1.0,1.0,-0.5], [0.5,1.0,0])
         
         root = self.parsePanel('''<root>
             <panel/>
-            <panel rotate="90" anchor-point="0.5"/>
-            <panel attach-id="0" attach-to="0.5" anchor-id="1"/>
+            <panel rotate="90" span-self="0.5"/>
+            <panel attach-id="0" attach-point="0.5" span-id="1"/>
         </root>''')
         assert_corner_points(self, root.children[2], [0.5,0,0], [1.0,0,-0.5], [1.0,1.0,-0.5], [0.5,1.0,0])
     
-    def testAnchorToSamePointAsAttach(self):
-        """Test anchoring and attaching to same point creates degenerate quad."""
+    def testSpanToSamePointAsAttach(self):
+        """Test spanning and attaching to same point creates degenerate quad."""
         root = self.parsePanel('''<root>
             <panel rotate="-90"/>
             <panel rotate="90"/>
-            <panel attach-id="0" anchor-id="1"/>
+            <panel attach-id="0" span-id="1"/>
         </root>''')
         assert_corner_points(self, root.children[2], [0,0,1], [0,0,1], [0,1,1], [0,1,1])
     
-    def testAnchorElementThatDoesntExist(self):
-        """Test non-existent anchor-id falls back to default positioning."""
+    def testSpanElementThatDoesntExist(self):
+        """Test non-existent span-id falls back to default positioning."""
         root = self.parsePanel('''<root>
             <panel size="5"/>
             <panel rotate="90" size="2"/>
             <panel rotate="90" size="5"/>
-            <panel attach-id="0" anchor-id="NOTAREALELEMENT" rotate="45" attach-to="0.5"/>    
+            <panel attach-id="0" span-id="NOTAREALELEMENT" rotate="45" attach-point="0.5"/>    
         </root>''')
         assert_corner_points(self, root.children[3], [2.5,0,0], [3.20711,0,-0.707107], 
                            [3.20711,1.0,-0.707107], [2.5,1,0])
@@ -161,8 +161,8 @@ class PanelAttachmentXMLTests(BaseIntegrationTest):
 class PanelIntersectionXMLTests(BaseIntegrationTest):
     """Integration tests for intersection-based panel positioning.
     
-    Tests the auto-intersection system (anchor-to="auto") which positions panels
-    based on geometric intersections with anchor elements.
+    Tests the auto-intersection system (span-point="auto") which positions panels
+    based on geometric intersections with span elements.
     """
     
     def setUp(self):
@@ -171,45 +171,45 @@ class PanelIntersectionXMLTests(BaseIntegrationTest):
         GXMLLayout.bind_layout("stack", GXMLStackLayout())
         GXMLLayout.bind_layout("fixed", GXMLFixedLayout())
     
-    def testAnchorWithAutoIntersect(self):
-        """Test anchor-to='auto' finds intersection with anchor element."""
+    def testSpanWithAutoIntersect(self):
+        """Test span-point='auto' finds intersection with span element."""
         root = self.parsePanel('''<root>
             <panel/>
             <panel rotate="90" size="2"/>
             <panel rotate="90"/>
-            <panel attach-id="0" anchor-id="2" anchor-to="auto" rotate="90" attach-to="0.5"/>
+            <panel attach-id="0" span-id="2" span-point="auto" rotate="90" attach-point="0.5"/>
         </root>''')
         assert_corner_points(self, root.children[3], [0.5,0,0], [0.5,0,-2], [0.5,1,-2], [0.5,1,0])
     
-    def testAutoAnchorWithNoIntersection(self):
-        """Test auto anchor falls back gracefully when no intersection found."""
+    def testAutoSpanWithNoIntersection(self):
+        """Test auto span falls back gracefully when no intersection found."""
         root = self.parsePanel('''<root>
             <panel size="5"/>
             <panel rotate="90" size="2"/>
             <panel rotate="90"/>
-            <panel attach-id="0" anchor-id="2" anchor-to="auto" rotate="90" attach-to="0.5"/>
+            <panel attach-id="0" span-id="2" span-point="auto" rotate="90" attach-point="0.5"/>
         </root>''')
         assert_corner_points(self, root.children[3], [2.5,0,0], [4.0,0,-2], [4.0,1,-2], [2.5,1,0])
     
-    def testAutoAnchorWithComplexGeometry(self):
-        """Test auto anchor with multiple panels in scene."""
+    def testAutoSpanWithComplexGeometry(self):
+        """Test auto span with multiple panels in scene."""
         root = self.parsePanel('''<root>
             <panel size="5"/>
             <panel rotate="90" size="2"/>
             <panel rotate="90"/>
-            <panel size="2" attach-id="0" attach-to="0" rotate="90"/>
+            <panel size="2" attach-id="0" attach-point="0" rotate="90"/>
             <panel rotate="-90"/>
-            <panel attach-id="0" anchor-id="4" anchor-to="auto" rotate="90" attach-to="0.5"/>
+            <panel attach-id="0" span-id="4" span-point="auto" rotate="90" attach-point="0.5"/>
         </root>''')
         assert_corner_points(self, root.children[5], [2.5,0,0], [1.0,0,-2], [1.0,1.0,-2], [2.5,1,0])
     
-    def testAutoAnchorWithRotation(self):
-        """Test auto anchor combined with rotation on attaching panel."""
+    def testAutoSpanWithRotation(self):
+        """Test auto span combined with rotation on attaching panel."""
         root = self.parsePanel('''<root>
             <panel size="5"/>
             <panel rotate="90" size="2"/>
             <panel rotate="90" size="5"/>
-            <panel attach-id="0" anchor-id="2" rotate="45" attach-to="0.5"/>    
+            <panel attach-id="0" span-id="2" rotate="45" attach-point="0.5"/>    
         </root>''')
         assert_corner_points(self, root.children[3], [2.5,0,0], [4.5,0,-2], [4.5,1.0,-2], [2.5,1,0])
 
@@ -217,8 +217,8 @@ class PanelIntersectionXMLTests(BaseIntegrationTest):
 class PanelPrimaryAxisXMLTests(BaseIntegrationTest):
     """Integration tests for primary axis inference and positioning.
     
-    Tests how panels determine their primary axis based on attach-to,
-    attach-point, and how primary axis affects panel orientation.
+    Tests how panels determine their primary axis based on attach-point,
+    and how primary axis affects panel orientation.
     """
     
     def setUp(self):
@@ -242,12 +242,12 @@ class PanelPrimaryAxisXMLTests(BaseIntegrationTest):
             </root>''').children
         assert_corner_points(self, panels[1], [1,0,0], [3,0,0], [3,1,0], [1,1,0])
     
-    def testPrimaryAxisInferenceWithAttachTo(self):
-        """Test attach-to side changes primary axis."""
+    def testPrimaryAxisInferenceWithAttachPoint(self):
+        """Test attach-point side changes primary axis."""
         panels = self.parsePanel('''
             <root>
                 <panel/>
-                <panel size="2" attach-to="top"/>
+                <panel size="2" attach-point="top"/>
             </root>''').children
         assert_corner_points(self, panels[1], [0,1,0], [1,1,0], [1,3,0], [0,3,0])
     
@@ -266,7 +266,7 @@ class PanelPrimaryAxisXMLTests(BaseIntegrationTest):
             <root>
                 <panel attach-point="top"/>
                 <panel/>
-                <panel attach-id="0" size="2" attach-to="top"/>
+                <panel attach-id="0" size="2" attach-point="top"/>
             </root>''').children
         assert_corner_points(self, panels[2], [0,1,0], [1,1,0], [1,3,0], [0,3,0])
     

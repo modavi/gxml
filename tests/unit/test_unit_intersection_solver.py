@@ -311,7 +311,7 @@ class IntersectionSolverUnitTests(unittest.TestCase):
         This test mimics a configuration similar to:
             <panel thickness="0.1"/>
             <panel thickness="0.1" rotate="80"/>
-            <panel thickness="0.1" rotate="-135" attach-to="0.0"/>
+            <panel thickness="0.1" rotate="-135" attach-point="0.0"/>
         
         Where:
         - P0's END is at the joint (traveling toward)

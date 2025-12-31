@@ -29,14 +29,15 @@ class GXMLConstructLayout(GXMLBaseLayout):
         element.secondaryAxis = Axis.Y
         
         element.attachElement = None
-        element.anchorElement = None
+        element.spanElement = None
         element.attachedElements = []
         
         element.attachOffset = Offset(1.0, 0.0, 0.0)
-        element.anchorOffset = Offset(0.0, 0.0, 0.0)
+        element.spanOffset = Offset(0.0, 0.0, 0.0)
+        element.spanSelfOffset = Offset(0.0, 0.0, 0.0)
         
         element.attachStr = None
-        element.anchorStr = None
+        element.spanStr = None
         
         element.size0 = element.size1 = element.transform.scale
         element.offset0 = element.offset1 = element.transform.translation
@@ -45,9 +46,27 @@ class GXMLConstructLayout(GXMLBaseLayout):
     def parse_layout_attributes(self, element, ctx):
         super().parse_layout_attributes(element, ctx)
         
-        attachId = ctx.getAttribute("attach-id", None)
-        anchorId = ctx.getAttribute("anchor-id", None)
+        # Parse shorthand attributes first: attach="id:point", span="id:point"
+        attachShorthand = ctx.getAttribute("attach", None)
+        spanShorthand = ctx.getAttribute("span", None)
         
+        # Parse attach shorthand: "id:point", "id", or ":point"
+        shorthandAttachId = None
+        shorthandAttachPoint = None
+        if attachShorthand:
+            shorthandAttachId, shorthandAttachPoint = self._parse_shorthand(attachShorthand, ctx)
+        
+        # Parse span shorthand: "id:point", "id", or ":point"  
+        shorthandSpanId = None
+        shorthandSpanPoint = None
+        if spanShorthand:
+            shorthandSpanId, shorthandSpanPoint = self._parse_shorthand(spanShorthand, ctx)
+        
+        # Get explicit attributes (override shorthand if present)
+        attachId = ctx.getAttribute("attach-id", None) or shorthandAttachId
+        spanId = ctx.getAttribute("span-id", None) or shorthandSpanId
+        
+        # Resolve attach element (default to previous sibling)
         if (attachId == "~" or attachId == None) and ctx.prevElem:
             attachId = ctx.prevElem.id
             
@@ -55,13 +74,18 @@ class GXMLConstructLayout(GXMLBaseLayout):
         if element.attachElement:
             element.attachElement.attachedElements.append(element)
         
-        element.anchorElement = ctx.elementMap[anchorId] if anchorId in ctx.elementMap else None
+        # Resolve span element
+        element.spanElement = ctx.elementMap[spanId] if spanId in ctx.elementMap else None
         
+        # Determine attach-point: explicit > shorthand > target's attach-str > default "right"
         attachTargetPointStr = element.attachElement.attachStr if element.attachElement else "right"
-        attachPointStr = ctx.getAttribute("attach-to", None) or attachTargetPointStr or "right"
-        anchorTargetPointStr = element.anchorElement.anchorStr if element.anchorElement else "left"
-        anchorPointStr = ctx.getAttribute("anchor-to", None) or anchorTargetPointStr or "auto"
+        attachPointStr = ctx.getAttribute("attach-point", None) or shorthandAttachPoint or attachTargetPointStr or "right"
         
+        # Determine span-point: explicit > shorthand > target's span-str > default "auto"
+        spanTargetPointStr = element.spanElement.spanStr if element.spanElement else "left"
+        spanPointStr = ctx.getAttribute("span-point", None) or shorthandSpanPoint or spanTargetPointStr or "auto"
+        
+        # Infer primary axis from attach point if not explicit
         primaryAxisStr = ctx.getAttribute("primary-axis", None)
         if primaryAxisStr:
             element.primaryAxis = Axis.parse(ctx.getAttribute("primary-axis", None))
@@ -72,13 +96,39 @@ class GXMLConstructLayout(GXMLBaseLayout):
             except:
                 element.primaryAxis = Axis.X
                 element.secondaryAxis = Axis.Y
-                
-        element.attachStr = ctx.getAttribute("attach-point", "right")
-        element.attachOffset = GXMLParsingUtils.parse_offset_vector(attachPointStr, ctx, element.primaryAxis, element.secondaryAxis)
-        element.anchorStr = ctx.getAttribute("anchor-point", "auto")
-        element.anchorOffset = GXMLParsingUtils.parse_offset_vector(anchorPointStr, ctx, element.primaryAxis, element.secondaryAxis)
         
-        element.transform.pivot = GXMLParsingUtils.parse_offset_vector(ctx.getAttribute("pivot", "left"), ctx, element.primaryAxis, element.secondaryAxis)
+        # Store string representations for downstream inheritance
+        # When others attach/span TO this element, what default point should they use?
+        # attach-point doubles as both: (1) where I attach on my target, AND (2) default for others attaching to me
+        # However, if attach-id is explicitly set, attach-point is just for positioning, not inheritance
+        explicitAttachId = ctx.getAttribute("attach-id", None)
+        if explicitAttachId:
+            # attach-point is for positioning only, use default "right" for inheritance
+            element.attachStr = "right"
+        else:
+            # attach-point sets the inheritance default (for when no attach-id, it's purely declarative)
+            element.attachStr = ctx.getAttribute("attach-point", "right")
+        element.spanStr = ctx.getAttribute("span-self", None) or "auto"  # Span default, or explicit override
+        
+        # Parse offsets
+        element.attachOffset = GXMLParsingUtils.parse_offset_vector(attachPointStr, ctx, element.primaryAxis, element.secondaryAxis)
+        element.spanOffset = GXMLParsingUtils.parse_offset_vector(spanPointStr, ctx, element.primaryAxis, element.secondaryAxis)
+        
+        # Parse attach-self (where on THIS panel to connect from) - affects pivot
+        attachSelfStr = ctx.getAttribute("attach-self", None)
+        pivotStr = ctx.getAttribute("pivot", None)
+        if attachSelfStr and not pivotStr:
+            # attach-self sets the pivot if pivot isn't explicitly set
+            element.transform.pivot = GXMLParsingUtils.parse_offset_vector(attachSelfStr, ctx, element.primaryAxis, element.secondaryAxis)
+        else:
+            element.transform.pivot = GXMLParsingUtils.parse_offset_vector(pivotStr or "left", ctx, element.primaryAxis, element.secondaryAxis)
+        
+        # Parse span-self (where on THIS panel for sizing reference)
+        spanSelfStr = ctx.getAttribute("span-self", None)
+        if spanSelfStr:
+            element.spanSelfOffset = GXMLParsingUtils.parse_offset_vector(spanSelfStr, ctx, element.primaryAxis, element.secondaryAxis)
+        else:
+            element.spanSelfOffset = Offset(0.0, 0.0, 0.0)
             
         rotate = GXMLParsingUtils.parse_transformation_vector(ctx.getAttribute("rotate", "0"), ctx, element.primaryAxis, 0, 0)
         size = GXMLParsingUtils.parse_transformation_vector(ctx.getAttribute("size", "1"), ctx, element.primaryAxis, 1, 1)
@@ -87,52 +137,85 @@ class GXMLConstructLayout(GXMLBaseLayout):
         element.size0, element.size1 = GXMLParsingUtils.parse_individual_transformation_attributes(ctx, size, size, "width", "height", "depth")
         element.offset0, element.offset1 = GXMLParsingUtils.parse_individual_transformation_attributes(ctx, offset, offset, "x", "y", "z")
         element.rotate, _ = GXMLParsingUtils.parse_individual_transformation_attributes(ctx, rotate, rotate, "pitch", "yaw", "roll")
+    
+    def _parse_shorthand(self, value, ctx):
+        """Parse shorthand syntax like 'id:point', 'id', or ':point'.
+        
+        Returns (id, point) tuple where either can be None.
+        """
+        if ':' in value:
+            parts = value.split(':', 1)
+            id_part = parts[0] if parts[0] else None
+            point_part = parts[1] if len(parts) > 1 and parts[1] else None
+            return (id_part, point_part)
+        else:
+            # No colon - could be just an id or just a point
+            # If it looks like a point name or number, treat as point
+            # Otherwise treat as id
+            if self._is_point_value(value):
+                return (None, value)
+            else:
+                return (value, None)
+    
+    def _is_point_value(self, value):
+        """Check if value looks like a point specification rather than an id."""
+        # Named points
+        point_names = {'left', 'right', 'top', 'bottom', 'center', 
+                       'top-left', 'top-right', 'bottom-left', 'bottom-right', 'auto'}
+        if value.lower() in point_names:
+            return True
+        # Numeric values (0.5, 1.0, etc)
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
         
     def find_intersection_point(self, transform, direction, point):
         p1 = transform.transform_point((0,0,0))
         p2 = transform.transform_point((1,0,0))
         return GXMLMath.find_intersection_ray_to_segment(point, direction, p1, p2)
     
-    def find_auto_anchor_point(self, element, attachTransform, anchorTransform, attachPoint, anchorOffset):
+    def find_auto_span_point(self, element, attachTransform, spanTransform, attachPoint, spanOffset):
         p1 = attachTransform.transform_point((0,0,0))
         p2 = attachTransform.transform_point((1,0,0))
         p3 = attachTransform.transform_point((0,1,0))
         
-        anchorP1 = anchorTransform.transform_point((0,0,0))
-        anchorP2 = anchorTransform.transform_point((1,0,0))
+        spanP1 = spanTransform.transform_point((0,0,0))
+        spanP2 = spanTransform.transform_point((1,0,0))
         
         angle = element.transform.rotation[1]
         d1 = GXMLMath.safe_normalize(p2 - p1)
         d2 = GXMLMath.safe_normalize(p3 - p1)
         d3 = GXMLMath.rotate_vector(d1, d2, angle)
         
-        intersectionPoint = self.find_intersection_point(anchorTransform, d3, attachPoint)
+        intersectionPoint = self.find_intersection_point(spanTransform, d3, attachPoint)
         
         if intersectionPoint is None:
-            angle1 = GXMLMath.angle_between(d1, GXMLMath.safe_normalize(anchorP1 - attachPoint))
-            angle2 = GXMLMath.angle_between(d1, GXMLMath.safe_normalize(anchorP2 - attachPoint))
+            angle1 = GXMLMath.angle_between(d1, GXMLMath.safe_normalize(spanP1 - attachPoint))
+            angle2 = GXMLMath.angle_between(d1, GXMLMath.safe_normalize(spanP2 - attachPoint))
             
             angleDiff1 = abs(angle1 - angle)
             angleDiff2 = abs(angle2 - angle)
             
             if(angleDiff1 < angleDiff2):
-                return anchorP1
+                return spanP1
             else:
-                return anchorP2
+                return spanP2
         else:
             return intersectionPoint
         
-    def calculate_anchor_matrix(self, element, attachTransform, attachOffset, anchorTransform, anchorOffset, height):
+    def calculate_span_matrix(self, element, attachTransform, attachOffset, spanTransform, spanOffset, height):
         attachPoint = attachTransform.transform_point(attachOffset)
         
-        if anchorOffset.auto:
-            anchorPoint = self.find_auto_anchor_point(element, attachTransform, anchorTransform, attachPoint, anchorOffset)
+        if spanOffset.auto:
+            spanPoint = self.find_auto_span_point(element, attachTransform, spanTransform, attachPoint, spanOffset)
         else:
-            anchorPoint = anchorTransform.transform_point(anchorOffset)
+            spanPoint = spanTransform.transform_point(spanOffset)
         
         right = attachTransform.right() if attachTransform else element.transform.right()
         
-        offset = anchorPoint - attachPoint
+        offset = spanPoint - attachPoint
         distance = GXMLMath.length(offset)
         
         if(distance == 0):
@@ -158,7 +241,7 @@ class GXMLConstructLayout(GXMLBaseLayout):
         super().pre_layout_element(element)
         
         size0 = self.expand_size(element.size0, element.attachElement, element.attachOffset)
-        size1 = self.expand_size(element.size1, element.anchorElement, element.anchorOffset, size0[1])
+        size1 = self.expand_size(element.size1, element.spanElement, element.spanOffset, size0[1])
         self.build_local_transform(element, size0, size1)
         self.build_world_transform(element, max(size0[1], size1[1]))
         
@@ -180,17 +263,17 @@ class GXMLConstructLayout(GXMLBaseLayout):
     
     def find_attached_elements(self, element):
         upstreamAttachElement = element.attachElement
-        downstreamAnchorElement = element.anchorElement
+        downstreamSpanElement = element.spanElement
         
         for child in element.parent.children:
             # To find the upstream attachElement without actually using the attachElement of this element, we need
-            # to actually check the anchorElement. As anchors attach to attach points of elements, and vice versa
-            if upstreamAttachElement == None and child.anchorElement == element:
+            # to actually check the spanElement. As spans attach to attach points of elements, and vice versa
+            if upstreamAttachElement == None and child.spanElement == element:
                 upstreamAttachElement = child
-            if downstreamAnchorElement == None and child.attachElement == element:
-                downstreamAnchorElement = child
+            if downstreamSpanElement == None and child.attachElement == element:
+                downstreamSpanElement = child
         
-        return upstreamAttachElement, element.attachOffset, downstreamAnchorElement, element.anchorOffset
+        return upstreamAttachElement, element.attachOffset, downstreamSpanElement, element.spanOffset
         
     def expand_size(self, size, targetElem, targetElemOffset, defaultSize = 1.0):
         newSize = [size[0],size[1],size[2]]
@@ -223,10 +306,10 @@ class GXMLConstructLayout(GXMLBaseLayout):
     
     def build_world_transform(self, element, height):
         attachTransform = copy.copy(element.attachElement.transform) if element.attachElement else None
-        anchorTransform = copy.copy(element.anchorElement.transform) if element.anchorElement else None
+        spanTransform = copy.copy(element.spanElement.transform) if element.spanElement else None
         
-        if anchorTransform:
-            element.transform.localTransformationMatrix = self.calculate_anchor_matrix(element, attachTransform, element.attachOffset, anchorTransform, element.anchorOffset, height)
+        if spanTransform:
+            element.transform.localTransformationMatrix = self.calculate_span_matrix(element, attachTransform, element.attachOffset, spanTransform, element.spanOffset, height)
         
         if attachTransform:
             attachMatrix = GXMLMath.translate_matrix(element.attachOffset)

@@ -8,6 +8,99 @@ from render_engines.base_render_context import BaseRenderContext
 from layouts.gxml_base_layout import GXMLBaseLayout
 
 
+class GXMLMockParsingContext:
+    """Mock parsing context for unit testing layout attribute parsing.
+    
+    Simulates the parsing context that would be passed to layout.parse_layout_attributes()
+    during real XML parsing. Allows tests to set up element maps and attributes without
+    needing actual XML parsing.
+    
+    Attributes:
+        elementMap: Dict mapping element IDs to element instances
+        prevElem: The previous sibling element (for implicit attach-id)
+        _attributes: Internal dict storing attributes set via setAttribute()
+    
+    Examples:
+        Test attribute parsing:
+            >>> ctx = GXMLMockParsingContext()
+            >>> ctx.elementMap = {"panel1": p1}
+            >>> ctx.setAttribute("attach-id", "panel1")
+            >>> layout.parse_layout_attributes(element, ctx)
+    """
+    
+    def __init__(self):
+        self.elementMap = {}
+        self.prevElem = None
+        self._attributes = {}
+        self._variables = {}
+    
+    def setAttribute(self, name: str, value):
+        """Set an attribute value for testing.
+        
+        Args:
+            name: Attribute name (e.g., "attach-id", "attach-point")
+            value: Attribute value as string
+        """
+        self._attributes[name] = value
+    
+    def getAttribute(self, name: str, default=None):
+        """Get an attribute value, returning default if not set.
+        
+        Args:
+            name: Attribute name to retrieve
+            default: Value to return if attribute not set
+            
+        Returns:
+            The attribute value or default
+        """
+        return self._attributes.get(name, default)
+    
+    def hasAttribute(self, name: str) -> bool:
+        """Check if an attribute is set.
+        
+        Args:
+            name: Attribute name to check
+            
+        Returns:
+            True if the attribute is set, False otherwise
+        """
+        return name in self._attributes
+    
+    def clearAttributes(self):
+        """Clear all attributes. Useful for resetting between test cases."""
+        self._attributes.clear()
+    
+    def eval(self, expr):
+        """Evaluate a simple expression (mock implementation).
+        
+        For testing purposes, this just tries to convert to float/int,
+        or returns the string if it can't be parsed.
+        
+        Args:
+            expr: Expression string to evaluate
+            
+        Returns:
+            Evaluated result (number or string)
+        """
+        if expr in self._variables:
+            return self._variables[expr]
+        try:
+            if '.' in str(expr):
+                return float(expr)
+            return int(expr)
+        except (ValueError, TypeError):
+            return expr
+    
+    def setVariable(self, name: str, value):
+        """Set a variable for expression evaluation.
+        
+        Args:
+            name: Variable name
+            value: Variable value
+        """
+        self._variables[name] = value
+
+
 class GXMLMockPanel(GXMLPanel):
     """Simplified panel mock for unit and integration testing.
     

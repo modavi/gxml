@@ -141,18 +141,18 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         self.assertEqual(panel.primaryAxis, Axis.X, "Default primary axis should be X")
         self.assertEqual(panel.secondaryAxis, Axis.Y, "Default secondary axis should be Y")
         self.assertIsNone(panel.attachElement, "Default attach element should be None")
-        self.assertIsNone(panel.anchorElement, "Default anchor element should be None")
+        self.assertIsNone(panel.spanElement, "Default span element should be None")
         self.assertEqual(len(panel.attachedElements), 0, "Default attached elements list should be empty")
         
         # Verify default offsets
         self.assertEqual(panel.attachOffset[0], 1.0, "Default attach offset X should be 1.0")
         self.assertEqual(panel.attachOffset[1], 0.0, "Default attach offset Y should be 0.0")
         self.assertEqual(panel.attachOffset[2], 0.0, "Default attach offset Z should be 0.0")
-        self.assertEqual(panel.anchorOffset[0], 0.0, "Default anchor offset should be 0,0,0")
+        self.assertEqual(panel.spanOffset[0], 0.0, "Default span offset should be 0,0,0")
         
-        # Verify default attach/anchor strings
+        # Verify default attach/span strings
         self.assertIsNone(panel.attachStr, "Default attach string should be None")
-        self.assertIsNone(panel.anchorStr, "Default anchor string should be None")
+        self.assertIsNone(panel.spanStr, "Default span string should be None")
         
         # Verify size and offset initialized from transform
         self.assertEqual(panel.size0, panel.transform.scale)
@@ -162,12 +162,12 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         self.assertEqual(panel.rotate, panel.transform.rotation)
     
     # ========================================================================
-    # ATTACHMENT AND ANCHORING
+    # ATTACHMENT AND SPANNING
     # ========================================================================
     
     def test_find_attached_elements_upstream(self):
-        """Test finding upstream attached elements via anchor relationships."""
-        # Create two panels where p2 is anchored to p1
+        """Test finding upstream attached elements via span relationships."""
+        # Create two panels where p2 spans to p1
         p1 = GXMLMockPanel("p1")
         p2 = GXMLMockPanel("p2")
         p1.parent = p2.parent = GXMLMockPanel("root")  # Share parent
@@ -176,19 +176,19 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         self.layout.apply_default_layout_properties(p1)
         self.layout.apply_default_layout_properties(p2)
         
-        # Set p2's anchorElement to p1 (p2 anchors to p1)
-        p2.anchorElement = p1
+        # Set p2's spanElement to p1 (p2 spans to p1)
+        p2.spanElement = p1
         p2.attachElement = None
         
         # Find attached elements from p1's perspective
-        # Since p2's anchorElement points to p1, when we search for p1's attached elements,
-        # we should find p2 as upstream (because p2 anchors to p1)
-        upstreamAttach, attachOffset, downstreamAnchor, anchorOffset = self.layout.find_attached_elements(p1)
+        # Since p2's spanElement points to p1, when we search for p1's attached elements,
+        # we should find p2 as upstream (because p2 spans to p1)
+        upstreamAttach, attachOffset, downstreamSpan, spanOffset = self.layout.find_attached_elements(p1)
         
-        # p2 anchors to p1, so from p1's perspective, p2 is upstream
-        self.assertEqual(upstreamAttach, p2, "Upstream attach element should be p2 (p2 anchors to p1)")
+        # p2 spans to p1, so from p1's perspective, p2 is upstream
+        self.assertEqual(upstreamAttach, p2, "Upstream attach element should be p2 (p2 spans to p1)")
         self.assertEqual(attachOffset, p1.attachOffset, "Attach offset should match p1's attach offset")
-        self.assertIsNone(downstreamAnchor, "Downstream anchor should be None")
+        self.assertIsNone(downstreamSpan, "Downstream span should be None")
     
     def test_find_attached_elements_downstream(self):
         """Test finding downstream attached elements via attach relationships."""
@@ -203,15 +203,15 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         
         # Set p2's attachElement to p1 (p2 attaches to p1)
         p2.attachElement = p1
-        p2.anchorElement = None
+        p2.spanElement = None
         
         # Find attached elements from p1's perspective
-        upstreamAttach, attachOffset, downstreamAnchor, anchorOffset = self.layout.find_attached_elements(p1)
+        upstreamAttach, attachOffset, downstreamSpan, spanOffset = self.layout.find_attached_elements(p1)
         
         # p2's attach points to p1, so p2 should be downstream from p1
         self.assertIsNone(upstreamAttach, "Upstream attach should be None")
-        self.assertEqual(downstreamAnchor, p2, "Downstream anchor element should be p2 (via attach)")
-        self.assertEqual(anchorOffset, p1.anchorOffset, "Anchor offset should match p1's anchor offset")
+        self.assertEqual(downstreamSpan, p2, "Downstream span element should be p2 (via attach)")
+        self.assertEqual(spanOffset, p1.spanOffset, "Span offset should match p1's span offset")
     
     # ========================================================================
     # SIZE EXPANSION
@@ -380,11 +380,11 @@ class ConstructLayoutUnitTests(unittest.TestCase):
                           "Local transform should have off-diagonal elements from rotation")
     
     # ========================================================================
-    # INTERSECTION AND AUTO ANCHORING
+    # INTERSECTION AND AUTO SPANNING
     # ========================================================================
     
     def test_find_intersection_point_basic(self):
-        """Test ray-segment intersection for anchor point calculation."""
+        """Test ray-segment intersection for span point calculation."""
         # Create a simple horizontal segment from (0,0,0) to (1,0,0)
         panel = GXMLMockPanel("p1", [0, 0, 0], [1, 0, 0], thickness=0.1)
         
@@ -402,48 +402,48 @@ class ConstructLayoutUnitTests(unittest.TestCase):
                                   msg="Intersection Y should be at segment Y")
     
     # ========================================================================
-    # ANCHOR MATRIX CALCULATION
+    # SPAN MATRIX CALCULATION
     # ========================================================================
     
-    def test_calculate_anchor_matrix_zero_distance(self):
-        """Test anchor matrix when anchor and attach points are coincident."""
+    def test_calculate_span_matrix_zero_distance(self):
+        """Test span matrix when span and attach points are coincident."""
         panel = GXMLMockPanel("p1")
         self.layout.apply_default_layout_properties(panel)
         
-        # Create transforms where attach and anchor are at the same point
+        # Create transforms where attach and span are at the same point
         attachTransform = GXMLMockPanel("attach", [0, 0, 0], [1, 0, 0], thickness=0.1).transform
-        anchorTransform = GXMLMockPanel("anchor", [0, 0, 0], [1, 0, 0], thickness=0.1).transform
+        spanTransform = GXMLMockPanel("span", [0, 0, 0], [1, 0, 0], thickness=0.1).transform
         
         attachOffset = Offset(0, 0, 0)
-        anchorOffset = Offset(0, 0, 0)
+        spanOffset = Offset(0, 0, 0)
         
-        matrix = self.layout.calculate_anchor_matrix(panel, attachTransform, attachOffset, 
-                                                   anchorTransform, anchorOffset, height=1.0)
+        matrix = self.layout.calculate_span_matrix(panel, attachTransform, attachOffset, 
+                                                   spanTransform, spanOffset, height=1.0)
         
         # Zero distance should result in zero scale in X
-        self.assertIsNotNone(matrix, "Anchor matrix should be created")
+        self.assertIsNotNone(matrix, "Span matrix should be created")
         # First column of matrix should have zero magnitude (zero X scale)
         self.assertAlmostEqual(matrix[0, 0], 0.0, places=5,
                               msg="Zero distance should result in zero X scale")
     
-    def test_calculate_anchor_matrix_non_zero_distance(self):
-        """Test anchor matrix calculation with separated attach/anchor points."""
+    def test_calculate_span_matrix_non_zero_distance(self):
+        """Test span matrix calculation with separated attach/span points."""
         panel = GXMLMockPanel("p1")
         self.layout.apply_default_layout_properties(panel)
         
-        # Create transforms where attach is at origin, anchor is at (2, 0, 0)
+        # Create transforms where attach is at origin, span is at (2, 0, 0)
         attachTransform = GXMLMockPanel("attach", [0, 0, 0], [1, 0, 0], thickness=0.1).transform
-        anchorTransform = GXMLMockPanel("anchor", [2, 0, 0], [3, 0, 0], thickness=0.1).transform
+        spanTransform = GXMLMockPanel("span", [2, 0, 0], [3, 0, 0], thickness=0.1).transform
         
         # Attach at end of attach element (1, 0, 0)
         attachOffset = Offset(1, 0, 0)
-        # Anchor at start of anchor element (0, 0, 0 in local coords = 2,0,0 in world)
-        anchorOffset = Offset(0, 0, 0)
+        # Span at start of span element (0, 0, 0 in local coords = 2,0,0 in world)
+        spanOffset = Offset(0, 0, 0)
         
-        matrix = self.layout.calculate_anchor_matrix(panel, attachTransform, attachOffset,
-                                                   anchorTransform, anchorOffset, height=2.0)
+        matrix = self.layout.calculate_span_matrix(panel, attachTransform, attachOffset,
+                                                   spanTransform, spanOffset, height=2.0)
         
-        self.assertIsNotNone(matrix, "Anchor matrix should be created")
+        self.assertIsNotNone(matrix, "Span matrix should be created")
         # Distance from (1,0,0) to (2,0,0) is 1.0
         # Matrix should scale by distance in X and height in Y
         # First column magnitude should be approximately the distance (1.0)
@@ -451,88 +451,88 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         self.assertAlmostEqual(x_scale, 1.0, places=5,
                               msg="X scale should match distance between points")
     
-    def test_calculate_anchor_matrix_with_auto_anchor(self):
-        """Test anchor matrix calculation with automatic anchor point selection."""
+    def test_calculate_span_matrix_with_auto_span(self):
+        """Test span matrix calculation with automatic span point selection."""
         panel = GXMLMockPanel("p1")
         self.layout.apply_default_layout_properties(panel)
         panel.transform.rotation = np.array([0.0, 0.0, 0.0])
         
         # Create transforms
         attachTransform = GXMLMockPanel("attach", [0, 0, 0], [1, 0, 0], thickness=0.1).transform
-        anchorTransform = GXMLMockPanel("anchor", [2, 0, 0], [3, 0, 0], thickness=0.1).transform
+        spanTransform = GXMLMockPanel("span", [2, 0, 0], [3, 0, 0], thickness=0.1).transform
         
         attachOffset = Offset(1, 0, 0)
-        anchorOffset = Offset.auto()  # Use auto anchor
+        spanOffset = Offset.auto()  # Use auto span
         
-        matrix = self.layout.calculate_anchor_matrix(panel, attachTransform, attachOffset,
-                                                   anchorTransform, anchorOffset, height=2.0)
+        matrix = self.layout.calculate_span_matrix(panel, attachTransform, attachOffset,
+                                                   spanTransform, spanOffset, height=2.0)
         
         # Should still produce a valid matrix
-        self.assertIsNotNone(matrix, "Anchor matrix with auto anchor should be created")
+        self.assertIsNotNone(matrix, "Span matrix with auto span should be created")
         # Matrix should not be all zeros
         self.assertGreater(np.sum(np.abs(matrix)), 0.1,
-                          "Auto anchor matrix should contain non-zero values")
+                          "Auto span matrix should contain non-zero values")
     
     # ========================================================================
-    # AUTO ANCHOR POINT CALCULATION
+    # AUTO SPAN POINT CALCULATION
     # ========================================================================
     
-    def test_find_auto_anchor_point_executes(self):
-        """Test auto anchor point executes and returns valid result."""
+    def test_find_auto_span_point_executes(self):
+        """Test auto span point executes and returns valid result."""
         panel = GXMLMockPanel("p1")
         self.layout.apply_default_layout_properties(panel)
         panel.transform.rotation = np.array([0.0, 45.0, 0.0])  # 45 degree Y rotation
         
-        # Attach and anchor elements
+        # Attach and span elements
         attachTransform = GXMLMockPanel("attach", [0, 0, 0], [1, 0, 0], height=1.0).transform
-        anchorTransform = GXMLMockPanel("anchor", [3, 0, 0], [5, 0, 0], height=1.0).transform
+        spanTransform = GXMLMockPanel("span", [3, 0, 0], [5, 0, 0], height=1.0).transform
         
         attachPoint = np.array([1.0, 0.0, 0.0])
-        anchorOffset = Offset(0, 0, 0)
+        spanOffset = Offset(0, 0, 0)
         
-        anchorPoint = self.layout.find_auto_anchor_point(panel, attachTransform, anchorTransform, 
-                                                      attachPoint, anchorOffset)
+        spanPoint = self.layout.find_auto_span_point(panel, attachTransform, spanTransform, 
+                                                      attachPoint, spanOffset)
         
         # Verify function executes and returns valid result
-        self.assertIsNotNone(anchorPoint, "Auto anchor point should be found")
-        self.assertEqual(len(anchorPoint), 3, "Auto anchor should return a 3D point")
+        self.assertIsNotNone(spanPoint, "Auto span point should be found")
+        self.assertEqual(len(spanPoint), 3, "Auto span should return a 3D point")
         # Verify no NaN or inf values (computation succeeded)
-        self.assertFalse(np.any(np.isnan(anchorPoint)), "Auto anchor point should not contain NaN")
-        self.assertFalse(np.any(np.isinf(anchorPoint)), "Auto anchor point should not contain inf")
+        self.assertFalse(np.any(np.isnan(spanPoint)), "Auto span point should not contain NaN")
+        self.assertFalse(np.any(np.isinf(spanPoint)), "Auto span point should not contain inf")
         # Verify at least one coordinate is non-zero (point was calculated)
-        coord_sum = abs(anchorPoint[0]) + abs(anchorPoint[1]) + abs(anchorPoint[2])
-        self.assertGreater(coord_sum, 0.1, "Auto anchor should have non-zero coordinates")
+        coord_sum = abs(spanPoint[0]) + abs(spanPoint[1]) + abs(spanPoint[2])
+        self.assertGreater(coord_sum, 0.1, "Auto span should have non-zero coordinates")
     
-    def test_find_auto_anchor_point_rotation_affects_result(self):
-        """Test that rotation angle affects the anchor point selection."""
+    def test_find_auto_span_point_rotation_affects_result(self):
+        """Test that rotation angle affects the span point selection."""
         # Set up geometry where rotation will affect which endpoint is selected
         attachTransform = GXMLMockPanel("attach", [0, 0, 0], [1, 0, 0], height=1.0).transform
-        # Anchor segment perpendicular to attach, positioned so rotation matters
-        anchorTransform = GXMLMockPanel("anchor", [2, 0, -1], [2, 0, 1], height=1.0).transform
+        # Span segment perpendicular to attach, positioned so rotation matters
+        spanTransform = GXMLMockPanel("span", [2, 0, -1], [2, 0, 1], height=1.0).transform
         attachPoint = np.array([1.0, 0.0, 0.0])
-        anchorOffset = Offset(0, 0, 0)
+        spanOffset = Offset(0, 0, 0)
         
         # Calculate with 0 degree rotation (direction along X axis)
         panel1 = GXMLMockPanel("p1")
         self.layout.apply_default_layout_properties(panel1)
         panel1.transform.rotation = np.array([0.0, 0.0, 0.0])
-        anchorPoint1 = self.layout.find_auto_anchor_point(panel1, attachTransform, anchorTransform,
-                                                       attachPoint, anchorOffset)
+        spanPoint1 = self.layout.find_auto_span_point(panel1, attachTransform, spanTransform,
+                                                       attachPoint, spanOffset)
         
         # Calculate with 90 degree rotation (direction along Z axis)
         panel2 = GXMLMockPanel("p2")
         self.layout.apply_default_layout_properties(panel2)
         panel2.transform.rotation = np.array([0.0, 90.0, 0.0])
-        anchorPoint2 = self.layout.find_auto_anchor_point(panel2, attachTransform, anchorTransform,
-                                                       attachPoint, anchorOffset)
+        spanPoint2 = self.layout.find_auto_span_point(panel2, attachTransform, spanTransform,
+                                                       attachPoint, spanOffset)
         
         # Both should return valid points
-        self.assertIsNotNone(anchorPoint1, "Anchor point 1 should be found")
-        self.assertIsNotNone(anchorPoint2, "Anchor point 2 should be found")
-        # With perpendicular anchor segment, different rotations may select different endpoints
+        self.assertIsNotNone(spanPoint1, "Span point 1 should be found")
+        self.assertIsNotNone(spanPoint2, "Span point 2 should be found")
+        # With perpendicular span segment, different rotations may select different endpoints
         # Just verify both calculations executed (returned non-zero points)
-        self.assertGreater(np.linalg.norm(anchorPoint1), 0.1, "Anchor point 1 should be non-zero")
-        self.assertGreater(np.linalg.norm(anchorPoint2), 0.1, "Anchor point 2 should be non-zero")
+        self.assertGreater(np.linalg.norm(spanPoint1), 0.1, "Span point 1 should be non-zero")
+        self.assertGreater(np.linalg.norm(spanPoint2), 0.1, "Span point 2 should be non-zero")
     
     # ========================================================================
     # PRE-LAYOUT AND LAYOUT INTEGRATION
@@ -644,8 +644,8 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         self.assertFalse(np.allclose(p2.transform.transformationMatrix, identity),
                         "Transform with attachment should not be identity")
     
-    def test_build_world_transform_with_anchor(self):
-        """Test build_world_transform applies anchor transformations with unit square architecture."""
+    def test_build_world_transform_with_span(self):
+        """Test build_world_transform applies span transformations with unit square architecture."""
         p1 = GXMLMockPanel("p1", [0, 0, 0], [2, 0, 0], height=2.0)
         p2 = GXMLMockPanel("p2")
         p3 = GXMLMockPanel("p3", [4, 0, 0], [6, 0, 0], height=3.0)
@@ -654,11 +654,11 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         self.layout.apply_default_layout_properties(p2)
         self.layout.apply_default_layout_properties(p3)
         
-        # p2 attaches to p1's end and anchors to p3's start
+        # p2 attaches to p1's end and spans to p3's start
         p2.attachElement = p1
-        p2.anchorElement = p3
+        p2.spanElement = p3
         p2.attachOffset = Offset(1, 0, 0)  # End of p1 at [2, 0, 0]
-        p2.anchorOffset = Offset(0, 0, 0)  # Start of p3 at [4, 0, 0]
+        p2.spanOffset = Offset(0, 0, 0)  # Start of p3 at [4, 0, 0]
         
         # Build local transform first
         size0 = np.array([1.0, 2.0, 0.5])
@@ -672,7 +672,7 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         self.assertIsNotNone(p2.transform.localTransformationMatrix,
                             "build_world_transform should set localTransformationMatrix")
         
-        # Verify the anchor matrix has correct scale values
+        # Verify the span matrix has correct scale values
         # Distance from p1 end [2,0,0] to p3 start [4,0,0] is 2.0
         # Height should be 2.0, thickness should be 0.5
         local_matrix = p2.transform.localTransformationMatrix
@@ -681,21 +681,21 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         z_scale = np.linalg.norm(local_matrix[:3, 2])
         
         self.assertAlmostEqual(x_scale, 2.0, places=5,
-                              msg="X scale should match distance between attach and anchor points")
+                              msg="X scale should match distance between attach and span points")
         self.assertAlmostEqual(y_scale, 2.0, places=5,
                               msg="Y scale should match height parameter")
         self.assertAlmostEqual(z_scale, 0.5, places=5,
                               msg="Z scale (thickness) should be preserved from original transform")
     
-    def test_build_world_transform_without_attach_or_anchor(self):
-        """Test build_world_transform works without attach or anchor elements."""
+    def test_build_world_transform_without_attach_or_span(self):
+        """Test build_world_transform works without attach or span elements."""
         p1 = GXMLMockPanel("p1")
         
         self.layout.apply_default_layout_properties(p1)
         
-        # No attach or anchor elements
+        # No attach or span elements
         p1.attachElement = None
-        p1.anchorElement = None
+        p1.spanElement = None
         
         size0 = np.array([1.0, 1.0, 0.5])
         size1 = np.array([1.0, 1.0, 0.5])

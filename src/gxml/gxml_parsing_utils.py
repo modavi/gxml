@@ -9,9 +9,30 @@ from gxml_types import *
 class GXMLParsingUtils:
     """Provides helper methods for parsing GXML elements and attributes."""
     
+    def _parse_corner(cornerStr):
+        """Parse corner names like 'top-left', 'bottom-right' into Offset.
+        Returns None if not a valid corner name."""
+        corners = {
+            "top-left": Offset(0, 1, 0),
+            "top-right": Offset(1, 1, 0),
+            "bottom-left": Offset(0, 0, 0),
+            "bottom-right": Offset(1, 0, 0),
+            # Also support reversed order
+            "left-top": Offset(0, 1, 0),
+            "right-top": Offset(1, 1, 0),
+            "left-bottom": Offset(0, 0, 0),
+            "right-bottom": Offset(1, 0, 0),
+        }
+        return corners.get(cornerStr.lower())
+    
     def parse_offset_vector(offsetStr, ctx, primaryAxis = Axis.X, secondaryAxis = Axis.Y):
         if offsetStr == "auto":
             return Offset.auto()
+        
+        # Check for corner names like "top-left", "bottom-right"
+        corner = GXMLParsingUtils._parse_corner(offsetStr)
+        if corner is not None:
+            return corner
         
         tokens = offsetStr.split(",")
         

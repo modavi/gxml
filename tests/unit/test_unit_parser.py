@@ -204,8 +204,8 @@ class ParserUnitTests(unittest.TestCase):
         xml = '''<root>
             <panel id="base" size="10">
                 <panel id="vertical1" rotate="90"/>
-                <panel id="vertical2" rotate="90" attach-to="0.5"/>
-                <panel id="vertical3" rotate="90" attach-to="1"/>
+                <panel id="vertical2" rotate="90" attach-point="0.5"/>
+                <panel id="vertical3" rotate="90" attach-point="1"/>
             </panel>
         </root>'''
         
@@ -511,6 +511,178 @@ class ParserUnitTests(unittest.TestCase):
         self.assertEqual(panel.id, "p1")
         # The actual evaluation happens in the element's parse method
         # Just verify parsing succeeds with expressions
+
+
+class AttachmentAttributeParsingTests(unittest.TestCase):
+    """Tests for parsing attachment-related attributes.
+    
+    The attachment schema uses:
+    - attach-id, attach-self, attach-point: Positioning (where I connect)
+    - span-id, span-self, span-point: Sizing (what determines my size)
+    - Shorthand: attach="id:point", span="id:point"
+    """
+    
+    def test_parse_attach_id(self):
+        """Test parsing attach-id attribute."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" attach-id="p1"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(len(result.children), 2)
+        # Parser should create the element; layout applies the attachment
+        self.assertEqual(result.children[1].id, "p2")
+    
+    def test_parse_attach_point_numeric(self):
+        """Test parsing attach-point with numeric value."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" attach-point="0.5"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "p2")
+    
+    def test_parse_attach_point_named(self):
+        """Test parsing attach-point with named value like 'right'."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" attach-point="right"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "p2")
+    
+    def test_parse_attach_self(self):
+        """Test parsing attach-self attribute."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" attach-self="center"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "p2")
+    
+    def test_parse_span_id(self):
+        """Test parsing span-id attribute."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2"/>
+            <panel id="p3" span-id="p2"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(len(result.children), 3)
+        self.assertEqual(result.children[2].id, "p3")
+    
+    def test_parse_span_point(self):
+        """Test parsing span-point attribute."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" span-id="p1" span-point="right"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "p2")
+    
+    def test_parse_span_self(self):
+        """Test parsing span-self attribute."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" span-id="p1" span-self="left" span-point="right"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "p2")
+    
+    def test_parse_attach_shorthand(self):
+        """Test parsing attach shorthand: attach='id:point'."""
+        xml = '''<root>
+            <panel id="wall"/>
+            <panel id="door" attach="wall:0.5"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[0].id, "wall")
+        self.assertEqual(result.children[1].id, "door")
+    
+    def test_parse_attach_shorthand_id_only(self):
+        """Test parsing attach shorthand with id only: attach='id'."""
+        xml = '''<root>
+            <panel id="wall"/>
+            <panel id="door" attach="wall"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "door")
+    
+    def test_parse_attach_shorthand_point_only(self):
+        """Test parsing attach shorthand with point only: attach=':point'."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" attach=":right"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "p2")
+    
+    def test_parse_span_shorthand(self):
+        """Test parsing span shorthand: span='id:point'."""
+        xml = '''<root>
+            <panel id="header"/>
+            <panel id="content" span="header:right"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "content")
+    
+    def test_parse_combined_attach_and_span(self):
+        """Test parsing both attach and span attributes together."""
+        xml = '''<root>
+            <panel id="left"/>
+            <panel id="right" rotate="90"/>
+            <panel id="bridge" attach-id="left" attach-point="right" span-id="right" span-point="left"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(len(result.children), 3)
+        self.assertEqual(result.children[2].id, "bridge")
+    
+    def test_parse_attach_point_corner(self):
+        """Test parsing attach-point with corner value."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" attach-point="top-left"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[1].id, "p2")
+    
+    def test_parse_span_point_auto(self):
+        """Test parsing span-point='auto' for intersection detection."""
+        xml = '''<root>
+            <panel id="p1"/>
+            <panel id="p2" rotate="90"/>
+            <panel id="p3" span-id="p2" span-point="auto"/>
+        </root>'''
+        
+        result = GXMLParser.parse(xml)
+        
+        self.assertEqual(result.children[2].id, "p3")
 
 
 if __name__ == '__main__':

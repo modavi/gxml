@@ -184,7 +184,7 @@ class PanelHeightXMLTests(BaseIntegrationTest):
             '''<root>
                 <panel height="2"/>
                 <panel height="4" rotate="90"/>
-                <panel height="*:*" attach-id="0" anchor-id="1" attach-to="0" anchor-to="1"/>
+                <panel height="*:*" attach-id="0" span-id="1" attach-point="0" span-point="1"/>
             </root>''',
             '''<root>
                 <r id="0" pts="0,0,0|1,0,0|1,2,0|0,2,0">
@@ -203,7 +203,7 @@ class PanelHeightXMLTests(BaseIntegrationTest):
             '''<root>
                 <panel height="2"/>
                 <panel height="4" rotate="90"/>
-                <panel height="*:*" attach-id="1" anchor-id="0"/>
+                <panel height="*:*" attach-id="1" span-id="0"/>
             </root>''',
             '''<root>
                 <r id="0" pts="0,0,0|1,0,0|1,2,0|0,2,0">
@@ -505,7 +505,7 @@ class PanelThicknessXMLTests(BaseIntegrationTest):
         - Panel 1's thickness is rotated: x-axis becomes the thickness axis
         """
         self.assertXMLOutput(
-            '<root><panel thickness="0.1"/><panel thickness="0.1" rotate="90" attach-id="0" attach-to="0.5"/></root>',
+            '<root><panel thickness="0.1"/><panel thickness="0.1" rotate="90" attach-id="0" attach-point="0.5"/></root>',
             '''<root>
                 <r id="0" pts="0,0,0|1,0,0|1,1,0|0,1,0">
                     <r id="front" pts="0,0,0.05|1,0,0.05|1,1,0.05|0,1,0.05"/>

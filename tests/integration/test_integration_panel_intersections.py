@@ -67,7 +67,7 @@ class JointTests(BaseIntegrationTest):
         xml_input = """<root>
             <panel thickness="0.1"/>
             <panel thickness="0.1" rotate="80"/>
-            <panel thickness="0.1" rotate="-130" attach-to="0.0"/>
+            <panel thickness="0.1" rotate="-130" attach-point="0.0"/>
         </root>"""
 
         expected_xml = """<root>
@@ -112,10 +112,10 @@ class JointTests(BaseIntegrationTest):
         xml_input = """<root>
             <panel thickness="0.1"/>
             <panel thickness="0.1" rotate="60"/>
-            <panel thickness="0.1" rotate="220" attach-to="0.0"/>
-            <panel thickness="0.1" rotate="-120" attach-to="0.0"/>
-            <panel thickness="0.1" rotate="50" attach-to="0.0"/>
-            <panel thickness="0.1" rotate="50" attach-to="0.0"/>
+            <panel thickness="0.1" rotate="220" attach-point="0.0"/>
+            <panel thickness="0.1" rotate="-120" attach-point="0.0"/>
+            <panel thickness="0.1" rotate="50" attach-point="0.0"/>
+            <panel thickness="0.1" rotate="50" attach-point="0.0"/>
         </root>"""
 
         expected_xml = """<root>
@@ -190,8 +190,8 @@ class JointTests(BaseIntegrationTest):
             <panel thickness="0.1" rotate="90"/>
             <panel thickness="0.1" rotate="90"/>
             
-            <panel thickness="0.1" anchor-id="1" anchor-to="1.0"/>
-            <panel thickness="0.1" attach-id="0" anchor-id="2" anchor-to="1.0"/>
+            <panel thickness="0.1" span-id="1" span-point="1.0"/>
+            <panel thickness="0.1" attach-id="0" span-id="2" span-point="1.0"/>
         </root>"""
 
         expected_xml = """<root>
@@ -480,8 +480,8 @@ class TJunctionTests(BaseIntegrationTest):
         self.assertXMLOutput(
             '''<root>
                 <panel size="10" thickness="0.5" rotate="0"/>
-                <panel attach-id="0" attach-to="0.75" rotate="90" size="4" thickness="0.5"/>
-                <panel attach-id="0" attach-to="0" rotate="-90" size="4" thickness="0.5"/>
+                <panel attach-id="0" attach-point="0.75" rotate="90" size="4" thickness="0.5"/>
+                <panel attach-id="0" attach-point="0" rotate="-90" size="4" thickness="0.5"/>
             </root>''',
             '''<root>
                 <r id="0" pts="0,0,0|10,0,0|10,1,0|0,1,0">
@@ -713,7 +713,7 @@ class CrossingTests(BaseIntegrationTest):
         self.assertXMLOutput(
             '''<root>
                 <panel thickness="0.1"/>
-                <panel thickness="0.1" rotate="45" attach-id="0" attach-to="0.5" offset="-0.5"/>
+                <panel thickness="0.1" rotate="45" attach-id="0" attach-point="0.5" offset="-0.5"/>
             </root>''',
             '''<root>
                 <r id="0" pts="0,0,0|1,0,0|1,1,0|0,1,0">
@@ -760,9 +760,9 @@ class CrossingTests(BaseIntegrationTest):
         self.assertXMLOutput(
             '''<root>
                 <panel size="8" thickness="0.5" rotate="0" intersection-options="!purge-interior-panels"/>
-                <panel attach-id="0" attach-to="0" rotate="-90" size="4" thickness="0.5" intersection-options="!purge-interior-panels"/>
-                <panel attach-to="0.5" rotate="90" size="8" thickness="0.5" intersection-options="!purge-interior-panels"/>
-                <panel attach-id="0" attach-to="0" rotate="-20" size="12" thickness="0.15" intersection-options="!purge-interior-panels"/>
+                <panel attach-id="0" attach-point="0" rotate="-90" size="4" thickness="0.5" intersection-options="!purge-interior-panels"/>
+                <panel attach-point="0.5" rotate="90" size="8" thickness="0.5" intersection-options="!purge-interior-panels"/>
+                <panel attach-id="0" attach-point="0" rotate="-20" size="12" thickness="0.15" intersection-options="!purge-interior-panels"/>
             </root>''',
             '''<root>
                 <r id="0" pts="0,0,0|8,0,0|8,1,0|0,1,0">
@@ -816,13 +816,13 @@ class CrossingTests(BaseIntegrationTest):
         Panel 1: 1x2 panel rotated 90°, attached with vertical pivot offset
         
         The pivot="0,0.5" places panel 1's pivot at half its height (y=0.5 from its local origin).
-        attach-to="1,0.5" attaches at the end of panel 0 at half height.
+        attach-point="1,0.5" attaches at the end of panel 0 at half height.
         This creates a panel that extends from y=-0.5 to y=1.5 (2 units tall, centered at y=0.5).
         """
         self.assertXMLOutput(
             '''<root>
                 <panel size="1,1" thickness="0.5"/>
-                <panel size="1,2" pivot="0,0.5" attach-to="1,0.5" rotate="90" thickness="0.5"/>
+                <panel size="1,2" pivot="0,0.5" attach-point="1,0.5" rotate="90" thickness="0.5"/>
             </root>''',
             '''<root>
                 <r id="0" pts="0,0,0|1,0,0|1,1,0|0,1,0">

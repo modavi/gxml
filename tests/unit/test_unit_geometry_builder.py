@@ -1053,7 +1053,7 @@ class JointCapTests(unittest.TestCase):
         Three panels meeting at [1,0,0] with angles matching the XML:
             <panel thickness="0.1"/>                     (along +X, origin to [1,0,0])
             <panel thickness="0.1" rotate="80"/>         (80° from +X, starts at [1,0,0])
-            <panel thickness="0.1" rotate="-130" attach-to="0.0"/>  (-130° from +X, starts at [1,0,0])
+            <panel thickness="0.1" rotate="-130" attach-point="0.0"/>  (-130° from +X, starts at [1,0,0])
         
         The cap polygons should fill the triangular gap between the mitered panel faces.
         Expected cap vertices at TOP (y=1):
