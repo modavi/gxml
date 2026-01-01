@@ -1,6 +1,6 @@
 import numpy as np
 import math
-from .vec3 import Vec3
+from .vec3 import Vec3, transform_point as vec3_transform_point, intersect_line_plane as vec3_intersect_line_plane
 #from scipy.spatial.transform import Rotation as R
 
 
@@ -166,31 +166,8 @@ def combine_transform_matrix(t,r,s, transform_order="srt"):
 def identity():
     return np.identity(4)
 
-def transform_point(point, matrix):
-    """Transform a 3D point by a 4x4 matrix. Returns Vec3 for operator support."""
-    x, y, z = point[0], point[1], point[2]
-    
-    # Check if it's a numpy array (use numpy indexing) or list (use list indexing)
-    if isinstance(matrix, np.ndarray):
-        w = x * matrix[0, 3] + y * matrix[1, 3] + z * matrix[2, 3] + matrix[3, 3]
-        if w != 0:
-            inv_w = 1.0 / w
-            return Vec3(
-                (x * matrix[0, 0] + y * matrix[1, 0] + z * matrix[2, 0] + matrix[3, 0]) * inv_w,
-                (x * matrix[0, 1] + y * matrix[1, 1] + z * matrix[2, 1] + matrix[3, 1]) * inv_w,
-                (x * matrix[0, 2] + y * matrix[1, 2] + z * matrix[2, 2] + matrix[3, 2]) * inv_w
-            )
-    else:
-        # List-of-lists matrix
-        w = x * matrix[0][3] + y * matrix[1][3] + z * matrix[2][3] + matrix[3][3]
-        if w != 0:
-            inv_w = 1.0 / w
-            return Vec3(
-                (x * matrix[0][0] + y * matrix[1][0] + z * matrix[2][0] + matrix[3][0]) * inv_w,
-                (x * matrix[0][1] + y * matrix[1][1] + z * matrix[2][1] + matrix[3][1]) * inv_w,
-                (x * matrix[0][2] + y * matrix[1][2] + z * matrix[2][2] + matrix[3][2]) * inv_w
-            )
-    return Vec3(0.0, 0.0, 0.0)
+# Use optimized transform_point from vec3 module (C extension if available)
+transform_point = vec3_transform_point
     
 # Rotate the vector by the input transformation matrix. The rotation component is extracted from the matrix and used to rotate the vector
 # while ensuring its length stays unmodified.    
@@ -560,26 +537,8 @@ def is_point_on_line_segment(point, p1, p2, tol=1e-6):
     
     return True
 
-def intersect_line_with_plane(line_point, line_direction, plane_point, plane_normal):
-    """Intersect a line with a plane. Returns Vec3 or None."""
-    # Extract coordinates directly (works for tuples, lists, arrays)
-    lpx, lpy, lpz = line_point[0], line_point[1], line_point[2]
-    ldx, ldy, ldz = line_direction[0], line_direction[1], line_direction[2]
-    ppx, ppy, ppz = plane_point[0], plane_point[1], plane_point[2]
-    pnx, pny, pnz = plane_normal[0], plane_normal[1], plane_normal[2]
-    
-    # Dot product of line direction and plane normal
-    denom = ldx * pnx + ldy * pny + ldz * pnz
-    
-    # If the denominator is zero, the line is parallel to the plane
-    if abs(denom) < 1e-10:
-        return None
-    
-    # Calculate t: (plane_point - line_point) · plane_normal / denom
-    t = ((ppx - lpx) * pnx + (ppy - lpy) * pny + (ppz - lpz) * pnz) / denom
-    
-    # Calculate the intersection point
-    return Vec3(lpx + t * ldx, lpy + t * ldy, lpz + t * ldz)
+# Use optimized version from vec3 module (C extension if available)
+intersect_line_with_plane = vec3_intersect_line_plane
 
 
 def intersect_lines_2d(line1, line2, plane='xz', tol=1e-9):

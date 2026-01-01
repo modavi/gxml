@@ -6,11 +6,30 @@ For 3-element vectors, pure Python is 5-15x faster than numpy arrays
 due to avoiding array creation overhead.
 
 Vec3 supports arithmetic operators (+, -, *, /) and indexing.
+
+If the _vec3 C extension is available, it will be used for maximum performance.
+Otherwise, falls back to pure Python implementation.
 """
 import math
 
+# Try to import C extension for maximum performance
+try:
+    from gxml.mathutils._vec3 import (
+        Vec3 as _CVec3,
+        transform_point as _c_transform_point,
+        intersect_line_plane as _c_intersect_line_plane,
+        distance as _c_distance,
+        length as _c_length,
+        normalize as _c_normalize,
+        dot as _c_dot,
+        cross as _c_cross,
+    )
+    _USE_C_EXTENSION = True
+except ImportError:
+    _USE_C_EXTENSION = False
 
-class Vec3:
+
+class _PythonVec3:
     """
     A lightweight 3D vector class that supports arithmetic operators.
     
@@ -52,35 +71,35 @@ class Vec3:
     def __add__(self, other):
         # Try direct attribute access first (fast path for Vec3)
         try:
-            return Vec3(self.x + other.x, self.y + other.y, self.z + other.z)
+            return _PythonVec3(self.x + other.x, self.y + other.y, self.z + other.z)
         except AttributeError:
-            return Vec3(self.x + other[0], self.y + other[1], self.z + other[2])
+            return _PythonVec3(self.x + other[0], self.y + other[1], self.z + other[2])
     
     def __radd__(self, other):
-        return Vec3(self.x + other[0], self.y + other[1], self.z + other[2])
+        return _PythonVec3(self.x + other[0], self.y + other[1], self.z + other[2])
     
     def __sub__(self, other):
         # Try direct attribute access first (fast path for Vec3)
         try:
-            return Vec3(self.x - other.x, self.y - other.y, self.z - other.z)
+            return _PythonVec3(self.x - other.x, self.y - other.y, self.z - other.z)
         except AttributeError:
-            return Vec3(self.x - other[0], self.y - other[1], self.z - other[2])
+            return _PythonVec3(self.x - other[0], self.y - other[1], self.z - other[2])
     
     def __rsub__(self, other):
-        return Vec3(other[0] - self.x, other[1] - self.y, other[2] - self.z)
+        return _PythonVec3(other[0] - self.x, other[1] - self.y, other[2] - self.z)
     
     def __mul__(self, scalar):
-        return Vec3(self.x * scalar, self.y * scalar, self.z * scalar)
+        return _PythonVec3(self.x * scalar, self.y * scalar, self.z * scalar)
     
     def __rmul__(self, scalar):
-        return Vec3(self.x * scalar, self.y * scalar, self.z * scalar)
+        return _PythonVec3(self.x * scalar, self.y * scalar, self.z * scalar)
     
     def __truediv__(self, scalar):
         inv = 1.0 / scalar
-        return Vec3(self.x * inv, self.y * inv, self.z * inv)
+        return _PythonVec3(self.x * inv, self.y * inv, self.z * inv)
     
     def __neg__(self):
-        return Vec3(-self.x, -self.y, -self.z)
+        return _PythonVec3(-self.x, -self.y, -self.z)
     
     def dot(self, other):
         """Dot product."""
@@ -88,7 +107,7 @@ class Vec3:
     
     def cross(self, other):
         """Cross product."""
-        return Vec3(
+        return _PythonVec3(
             self.y * other[2] - self.z * other[1],
             self.z * other[0] - self.x * other[2],
             self.x * other[1] - self.y * other[0]
@@ -106,9 +125,9 @@ class Vec3:
         """Return normalized copy."""
         mag = self.length()
         if mag < 1e-10:
-            return Vec3(0.0, 0.0, 0.0)
+            return _PythonVec3(0.0, 0.0, 0.0)
         inv_mag = 1.0 / mag
-        return Vec3(self.x * inv_mag, self.y * inv_mag, self.z * inv_mag)
+        return _PythonVec3(self.x * inv_mag, self.y * inv_mag, self.z * inv_mag)
     
     def to_tuple(self):
         """Convert to tuple."""
@@ -117,6 +136,10 @@ class Vec3:
     def to_list(self):
         """Convert to list."""
         return [self.x, self.y, self.z]
+
+
+# Export the appropriate Vec3 class
+Vec3 = _CVec3 if _USE_C_EXTENSION else _PythonVec3
 
 
 # Standalone functions for tuple-based math (for places that don't use Vec3)
@@ -181,7 +204,7 @@ def vec3_lerp(a, b, t):
 
 
 # ============================================================================
-# Matrix Operations (4x4) - keeping for reference
+# Matrix Operations (4x4)
 # ============================================================================
 
 Mat4 = list   # 4x4 matrix as list of 4 lists
@@ -195,7 +218,8 @@ def mat4_identity():
         [0.0, 0.0, 0.0, 1.0]
     ]
 
-def transform_point(point, matrix):
+
+def _python_transform_point(point, matrix):
     """Transform a 3D point by a 4x4 matrix. Returns Vec3."""
     x, y, z = point[0], point[1], point[2]
     
@@ -221,3 +245,24 @@ def transform_point(point, matrix):
                 (x * matrix[0][2] + y * matrix[1][2] + z * matrix[2][2] + matrix[3][2]) * inv_w
             )
     return Vec3(0.0, 0.0, 0.0)
+
+
+def _python_intersect_line_plane(line_point, line_direction, plane_point, plane_normal):
+    """Intersect a line with a plane. Returns Vec3 or None."""
+    lpx, lpy, lpz = line_point[0], line_point[1], line_point[2]
+    ldx, ldy, ldz = line_direction[0], line_direction[1], line_direction[2]
+    ppx, ppy, ppz = plane_point[0], plane_point[1], plane_point[2]
+    pnx, pny, pnz = plane_normal[0], plane_normal[1], plane_normal[2]
+    
+    denom = ldx * pnx + ldy * pny + ldz * pnz
+    
+    if abs(denom) < 1e-10:
+        return None
+    
+    t = ((ppx - lpx) * pnx + (ppy - lpy) * pny + (ppz - lpz) * pnz) / denom
+    return Vec3(lpx + t * ldx, lpy + t * ldy, lpz + t * ldz)
+
+
+# Use C version if available, otherwise Python fallback
+transform_point = _c_transform_point if _USE_C_EXTENSION else _python_transform_point
+intersect_line_plane = _c_intersect_line_plane if _USE_C_EXTENSION else _python_intersect_line_plane
