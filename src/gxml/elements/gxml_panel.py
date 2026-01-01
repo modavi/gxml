@@ -118,25 +118,54 @@ class GXMLPanel(GXMLLayoutElement):
         self._face_normal_cache.clear()
         self._face_point_cache.clear()
         self._primary_axis_ray_cache.clear()
+    
+    @staticmethod
+    def _get_sibling_panels(panel):
+        """Get all panel siblings including the panel itself."""
+        panels = []
+        for child in panel.parent.children:
+            if isinstance(child, GXMLPanel):
+                panels.append(child)
+        return panels
+    
+    @staticmethod  
+    def _get_or_compute_solution(panel):
+        """Get cached solution from parent, or compute it if not available.
+        
+        The solution is cached on the parent element so all sibling panels
+        share the same computation. This is cleared at the start of each
+        post-layout pass.
+        """
+        from elements.solvers import IntersectionSolver, FaceSolver
+        
+        cache_key = '_panel_solution_cache'
+        parent = panel.parent
+        
+        # Check if solution is already cached on parent
+        if hasattr(parent, cache_key):
+            return getattr(parent, cache_key)
+        
+        # Compute solution for all sibling panels
+        all_panels = GXMLPanel._get_sibling_panels(panel)
+        intersection_solution = IntersectionSolver.solve(all_panels)
+        panel_faces = FaceSolver.solve(intersection_solution)
+        
+        # Cache on parent for sibling panels to reuse
+        solution = (intersection_solution, panel_faces)
+        setattr(parent, cache_key, solution)
+        
+        return solution
         
     def on_post_layout(self):
         push_perf_marker(None)
         
-        # Import here to avoid circular dependency
-        from elements.solvers import IntersectionSolver, FaceSolver, GeometryBuilder
+        from elements.solvers import GeometryBuilder
         
-        # Get all panel siblings
-        all_panels = [self]
-        for child in self.parent.children:
-            if isinstance(child, GXMLPanel) and child is not self:
-                all_panels.append(child)
+        # Get or compute the shared solution (cached on parent)
+        intersection_solution, panel_faces = GXMLPanel._get_or_compute_solution(self)
         
-        solution = IntersectionSolver.solve(all_panels)
-        panel_faces = FaceSolver.solve(solution)
-        
-        # Generate geometry for this panel only (not all panels in the solution)
-        # Segments are added as dynamic children internally by build()
-        GeometryBuilder.build(self, panel_faces, solution)
+        # Generate geometry for this panel only
+        GeometryBuilder.build(self, panel_faces, intersection_solution)
             
         pop_perf_marker()
     

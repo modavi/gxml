@@ -98,6 +98,10 @@ class GXMLLayout(object):
             Can be used to run any final adjustments to the layouts that a processor may want to do after an element has been laid out such as
             maybe applying a post process to the elements position or scale.
         """
+        # Clear any cached solutions from previous runs (used by panel intersection solving)
+        for element in rootElement.iterate(TraversalDirection.TopDownBreadthFirst):
+            if hasattr(element, '_panel_solution_cache'):
+                delattr(element, '_panel_solution_cache')
         
         for element in (e for e in rootElement.iterate(TraversalDirection.TopDownBreadthFirst) if e.parent):
             layoutProcessor = GXMLLayout.get_bound_layout_processor(element.parent.childLayoutScheme)
