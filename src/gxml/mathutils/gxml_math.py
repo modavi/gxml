@@ -166,8 +166,23 @@ def identity():
     return np.identity(4)
 
 def transform_point(point, matrix):
+    # Avoid creating new arrays when possible
+    if isinstance(matrix, np.ndarray) and matrix.shape == (4, 4):
+        # Fast path: matrix is already a 4x4 numpy array
+        # Uses row-vector * matrix convention (same as np.dot(row_vec, matrix))
+        x, y, z = point[0], point[1], point[2]
+        w = x * matrix[0, 3] + y * matrix[1, 3] + z * matrix[2, 3] + matrix[3, 3]
+        if w != 0:
+            inv_w = 1.0 / w
+            return np.array([
+                (x * matrix[0, 0] + y * matrix[1, 0] + z * matrix[2, 0] + matrix[3, 0]) * inv_w,
+                (x * matrix[0, 1] + y * matrix[1, 1] + z * matrix[2, 1] + matrix[3, 1]) * inv_w,
+                (x * matrix[0, 2] + y * matrix[1, 2] + z * matrix[2, 2] + matrix[3, 2]) * inv_w
+            ])
+    
+    # Fallback for non-numpy or wrong shape
     point_h = np.array([point[0], point[1], point[2], 1])
-    matrix = np.array(matrix)
+    matrix = np.asarray(matrix)
     
     if matrix.shape != (4, 4): 
         raise ValueError("Transformation matrix must be 4x4")
@@ -201,6 +216,14 @@ def safe_normalize(vector):
 
 def cross(vector1, vector2):
     return np.cross(vector1, vector2)
+
+def cross3(a, b):
+    """Fast 3D cross product without numpy overhead."""
+    return np.array([
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0]
+    ])
 
 def dot_product(vector1, vector2):
     return np.dot(vector1, vector2)
@@ -374,32 +397,40 @@ def find_intersection_ray_to_segment(point, direction, p1, p2):
     return None
 
 def find_intersection_between_rays(p1, dir1, p2, dir2):
-    p1 = np.array(p1)
-    dir1 = np.array(dir1)
-    p2 = np.array(p2)
-    dir2 = np.array(dir2)
+    if not isinstance(p1, np.ndarray):
+        p1 = np.asarray(p1)
+    if not isinstance(dir1, np.ndarray):
+        dir1 = np.asarray(dir1)
+    if not isinstance(p2, np.ndarray):
+        p2 = np.asarray(p2)
+    if not isinstance(dir2, np.ndarray):
+        dir2 = np.asarray(dir2)
     
     # Calculate the cross product of the direction vectors
-    cross_dir = np.cross(dir1, dir2)
-    denom = np.linalg.norm(cross_dir) ** 2
+    cross_dir = cross3(dir1, dir2)
+    denom = cross_dir[0]*cross_dir[0] + cross_dir[1]*cross_dir[1] + cross_dir[2]*cross_dir[2]
     
     # If the denominator is zero, the rays are parallel
-    if np.isclose(denom, 0):
+    if denom < 1e-12:
         return None
     
     # Calculate the vector from the origin of the first ray to the origin of the second ray
     w = p2 - p1
     
-    # Calculate the intersection parameters
-    t1 = np.dot(np.cross(w, dir2), cross_dir) / denom
-    t2 = np.dot(np.cross(w, dir1), cross_dir) / denom
+    # Calculate the intersection parameters (inline dot products)
+    w_cross_dir2 = cross3(w, dir2)
+    w_cross_dir1 = cross3(w, dir1)
+    t1 = (w_cross_dir2[0]*cross_dir[0] + w_cross_dir2[1]*cross_dir[1] + w_cross_dir2[2]*cross_dir[2]) / denom
+    t2 = (w_cross_dir1[0]*cross_dir[0] + w_cross_dir1[1]*cross_dir[1] + w_cross_dir1[2]*cross_dir[2]) / denom
     
     # Calculate the intersection points on each ray
     intersection1 = p1 + t1 * dir1
     intersection2 = p2 + t2 * dir2
     
     # Check if the intersection points are the same (within a tolerance)
-    if np.allclose(intersection1, intersection2):
+    diff = intersection1 - intersection2
+    dist_sq = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]
+    if dist_sq < 1e-12:  # tolerance squared
         return intersection1
     
     return None
@@ -416,29 +447,36 @@ def find_intersection_between_segments(p1, p2, p3, p4, tol=1e-6):
     Returns:
         The intersection point as a numpy array, or None if segments don't intersect
     """
-    p1 = np.array(p1)
-    p2 = np.array(p2)
-    p3 = np.array(p3)
-    p4 = np.array(p4)
+    # Use asarray to avoid copies if already numpy arrays
+    if not isinstance(p1, np.ndarray):
+        p1 = np.asarray(p1)
+    if not isinstance(p2, np.ndarray):
+        p2 = np.asarray(p2)
+    if not isinstance(p3, np.ndarray):
+        p3 = np.asarray(p3)
+    if not isinstance(p4, np.ndarray):
+        p4 = np.asarray(p4)
     
     # Calculate the vectors
     segment1 = p2 - p1
     segment2 = p4 - p3
     
-    # Calculate the cross product of the segment vectors
-    cross_dir = np.cross(segment1, segment2)
-    denom = np.linalg.norm(cross_dir) ** 2
+    # Calculate the cross product of the segment vectors (use inline cross for speed)
+    cross_dir = cross3(segment1, segment2)
+    denom = cross_dir[0]*cross_dir[0] + cross_dir[1]*cross_dir[1] + cross_dir[2]*cross_dir[2]
     
     # If the denominator is zero, the segments are parallel
-    if np.isclose(denom, 0):
+    if denom < tol * tol:
         return None
     
     # Calculate the vector from the start of the first segment to the start of the second segment
     w = p3 - p1
     
-    # Calculate the intersection parameters
-    t1 = np.dot(np.cross(w, segment2), cross_dir) / denom
-    t2 = np.dot(np.cross(w, segment1), cross_dir) / denom
+    # Calculate the intersection parameters (inline cross products)
+    w_cross_seg2 = cross3(w, segment2)
+    w_cross_seg1 = cross3(w, segment1)
+    t1 = (w_cross_seg2[0]*cross_dir[0] + w_cross_seg2[1]*cross_dir[1] + w_cross_seg2[2]*cross_dir[2]) / denom
+    t2 = (w_cross_seg1[0]*cross_dir[0] + w_cross_seg1[1]*cross_dir[1] + w_cross_seg1[2]*cross_dir[2]) / denom
     
     # Check if the intersection points are within the segments (with tolerance for floating point)
     if -tol <= t1 <= 1 + tol and -tol <= t2 <= 1 + tol:
@@ -446,7 +484,10 @@ def find_intersection_between_segments(p1, p2, p3, p4, tol=1e-6):
         intersection2 = p3 + t2 * segment2
         
         # Check if the intersection points are the same (within tolerance)
-        if np.allclose(intersection1, intersection2, atol=tol):
+        # Manual distance check instead of np.allclose
+        diff = intersection1 - intersection2
+        dist_sq = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]
+        if dist_sq < tol * tol:
             return intersection1
     
     return None
@@ -473,28 +514,29 @@ def is_point_on_line_segment(point, p1, p2, tol=1e-6):
     return True
 
 def intersect_line_with_plane(line_point, line_direction, plane_point, plane_normal):
-    line_point = np.array(line_point)
-    line_direction = np.array(line_direction)
-    plane_point = np.array(plane_point)
-    plane_normal = np.array(plane_normal)
+    # Convert to numpy arrays if needed
+    if not isinstance(line_point, np.ndarray):
+        line_point = np.asarray(line_point)
+    if not isinstance(line_direction, np.ndarray):
+        line_direction = np.asarray(line_direction)
+    if not isinstance(plane_point, np.ndarray):
+        plane_point = np.asarray(plane_point)
+    if not isinstance(plane_normal, np.ndarray):
+        plane_normal = np.asarray(plane_normal)
     
-    # Normalize the plane normal
-    plane_normal = normalize(plane_normal)
-    
-    # Calculate the denominator
-    denominator = np.dot(line_direction, plane_normal)
+    # Calculate the denominator using inline dot product
+    denom = line_direction[0]*plane_normal[0] + line_direction[1]*plane_normal[1] + line_direction[2]*plane_normal[2]
     
     # If the denominator is zero, the line is parallel to the plane
-    if np.isclose(denominator, 0):
+    if abs(denom) < 1e-10:
         return None
     
     # Calculate the distance from the line point to the plane
-    t = np.dot(plane_point - line_point, plane_normal) / denominator
+    diff = plane_point - line_point
+    t = (diff[0]*plane_normal[0] + diff[1]*plane_normal[1] + diff[2]*plane_normal[2]) / denom
     
     # Calculate the intersection point
-    intersection_point = line_point + t * line_direction
-
-    return intersection_point
+    return line_point + t * line_direction
 
 
 def intersect_lines_2d(line1, line2, plane='xz', tol=1e-9):
@@ -619,4 +661,5 @@ def find_interpolated_point(point, p1, p2):
     return interpolation
 
 def lerp(t, a, b):
+    # Use numpy operations directly - a and b should already be numpy arrays
     return a + t * (b - a)

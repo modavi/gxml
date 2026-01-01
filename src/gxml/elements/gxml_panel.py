@@ -100,6 +100,11 @@ class GXMLPanel(GXMLLayoutElement):
         
         self.quad_interpolator = QuadInterpolator([0,0,0], [1,0,0], [1,1,0], [0,1,0])
         
+        # Caches for expensive computations (cleared on transform changes)
+        self._face_normal_cache = {}
+        self._face_point_cache = {}
+        self._primary_axis_ray_cache = {}
+        
     def parse(self, ctx):
         super().parse(ctx)
         self.thickness = float(ctx.getAttribute("thickness", self.thickness))
@@ -107,6 +112,12 @@ class GXMLPanel(GXMLLayoutElement):
     def transform_point(self, point):
         point = self.quad_interpolator.get_interpolated_point(point)
         return super().transform_point(point)
+    
+    def invalidate_caches(self):
+        """Clear cached computations. Call when transform changes."""
+        self._face_normal_cache.clear()
+        self._face_point_cache.clear()
+        self._primary_axis_ray_cache.clear()
         
     def on_post_layout(self):
         push_perf_marker(None)
@@ -369,6 +380,10 @@ class GXMLPanel(GXMLLayoutElement):
         Returns:
             numpy array: normalized normal vector in world space
         """
+        # Check cache first
+        if side in self._face_normal_cache:
+            return self._face_normal_cache[side]
+        
         # Get three points on the face to compute the normal
         local_points = self.get_local_points_from_side(side)
         world_points = [
@@ -379,10 +394,14 @@ class GXMLPanel(GXMLLayoutElement):
         # Compute normal using cross product of two edge vectors
         edge1 = world_points[1] - world_points[0]
         edge2 = world_points[2] - world_points[0]
-        normal = np.cross(edge1, edge2)
+        normal = GXMLMath.cross3(edge1, edge2)
         
         norm = np.linalg.norm(normal)
-        return normal / norm if norm > 0 else normal
+        result = normal / norm if norm > 0 else normal
+        
+        # Cache and return
+        self._face_normal_cache[side] = result
+        return result
     
     def get_visible_thickness_face(self) -> 'PanelSide':
         """
@@ -426,7 +445,7 @@ class GXMLPanel(GXMLLayoutElement):
             # For non-rectangular panels, compute the quad normal
             edge1 = corners[1] - corners[0]
             edge2 = corners[3] - corners[0]
-            normal = np.cross(edge1, edge2)
+            normal = GXMLMath.cross3(edge1, edge2)
             
             # Show FRONT if normal has positive Z, BACK if negative
             if normal[2] > 0:
@@ -459,6 +478,24 @@ class GXMLPanel(GXMLLayoutElement):
         }
         return offsets.get(face, (0.5, 0.5, 0.0))
     
+    def get_face_center_world(self, face: PanelSide) -> np.ndarray:
+        """
+        Get the world-space center point of a face (cached).
+        
+        Args:
+            face: Which face (PanelSide enum)
+            
+        Returns:
+            numpy array: world-space position of face center
+        """
+        if face in self._face_point_cache:
+            return self._face_point_cache[face]
+        
+        face_offset = self.get_face_center_local(face)
+        point = self.transform_point(face_offset)
+        self._face_point_cache[face] = point
+        return point
+    
     def get_primary_axis_ray(self, z_offset: float = 0.0) -> Optional[GXMLRay]:
         """
         Get a ray along the panel's primary (t) axis in world space.
@@ -469,9 +506,14 @@ class GXMLPanel(GXMLLayoutElement):
         Returns:
             Ray from t=0 to t=1, or None if panel is degenerate
         """
+        if z_offset in self._primary_axis_ray_cache:
+            return self._primary_axis_ray_cache[z_offset]
+        
         start = self.transform_point((0, 0, z_offset))
         end = self.transform_point((1, 0, z_offset))
-        return GXMLRay.from_points(start, end)
+        ray = GXMLRay.from_points(start, end)
+        self._primary_axis_ray_cache[z_offset] = ray
+        return ray
     
     def get_face_closest_to_direction(self, direction, candidate_faces=None):
         """

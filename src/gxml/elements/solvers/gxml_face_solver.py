@@ -811,6 +811,5 @@ class FaceSolver:
             Intersection point, or None if parallel
         """
         face_normal = panel.get_face_normal(face)
-        face_offset = panel.get_face_center_local(face)
-        face_point = panel.transform_point(face_offset)
+        face_point = panel.get_face_center_world(face)
         return intersect_line_with_plane(line_start, line_direction, face_point, face_normal)

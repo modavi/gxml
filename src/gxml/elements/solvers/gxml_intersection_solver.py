@@ -620,7 +620,10 @@ class IntersectionSolver:
                 end = panel.transform_point([PanelEndpoint.END.value, 0, 0])
                 
                 # Determine which direction to use based on which endpoint is at center
-                if np.allclose(start, position, atol=DISTANCE_TOLERANCE):
+                # Use manual distance check instead of np.allclose
+                diff = start - position
+                dist_sq = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]
+                if dist_sq < DISTANCE_TOLERANCE * DISTANCE_TOLERANCE:
                     direction = end - start
                 else:
                     direction = start - end
