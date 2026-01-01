@@ -3,6 +3,10 @@ import math
 from .vec3 import Vec3, transform_point as vec3_transform_point, intersect_line_plane as vec3_intersect_line_plane
 #from scipy.spatial.transform import Rotation as R
 
+# Pre-allocated identity matrix (read-only reference)
+_IDENTITY_4x4 = np.eye(4, dtype=np.float64)
+_IDENTITY_4x4.flags.writeable = False
+
 
 def unpack_args(*args):
     x = y = z = 0
@@ -18,45 +22,70 @@ def unpack_args(*args):
     return x,y,z
 
 def rot_matrix(*args, rotate_order="xyz"):
-    x,y,z = unpack_args(*args)
-    x = np.radians(x)
-    y = np.radians(y)
-    z = np.radians(z)
+    """Compute combined rotation matrix directly without intermediate matrices."""
+    rx, ry, rz = unpack_args(*args)
     
-    # Rotation around the X-axis
-    R_x = np.array([
-        [1, 0, 0, 0],
-        [0, np.cos(x), np.sin(x), 0],
-        [0, -np.sin(x), np.cos(x), 0],
-        [0, 0, 0, 1]
-    ])
+    # Convert to radians and compute sin/cos once
+    rx = math.radians(rx)
+    ry = math.radians(ry)
+    rz = math.radians(rz)
     
-    # Rotation around the Y-axis
-    R_y = np.array([
-        [np.cos(y), 0, -np.sin(y), 0],
-        [0, 1, 0, 0],
-        [np.sin(y), 0, np.cos(y), 0],
-        [0, 0, 0, 1]
-    ])
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    cz, sz = math.cos(rz), math.sin(rz)
     
-    # Rotation around the Z-axis
-    R_z = np.array([
-        [np.cos(z), np.sin(z), 0, 0],
-        [-np.sin(z), np.cos(z), 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1]
-    ])
+    # Build combined rotation matrix based on order
+    # For xyz order with left multiplication: Rx @ Ry @ Rz
+    order = rotate_order.lower()
     
-    rotation_matrix = np.eye(4)
-    for axis in reversed(rotate_order.lower()):
-        if axis == 'x':
-            rotation_matrix = np.dot(R_x, rotation_matrix)
-        elif axis == 'y':
-            rotation_matrix = np.dot(R_y, rotation_matrix)
-        elif axis == 'z':
-            rotation_matrix = np.dot(R_z, rotation_matrix)
-
-    return rotation_matrix
+    if order == "xyz":
+        # Combined xyz rotation matrix: Rx @ Ry @ Rz
+        return np.array([
+            [cy*cz, cy*sz, -sy, 0],
+            [sx*sy*cz - cx*sz, sx*sy*sz + cx*cz, sx*cy, 0],
+            [cx*sy*cz + sx*sz, cx*sy*sz - sx*cz, cx*cy, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float64)
+    elif order == "zyx":
+        # Combined zyx rotation matrix: Rz @ Ry @ Rx
+        return np.array([
+            [cy*cz, cx*sz + sx*sy*cz, sx*sz - cx*sy*cz, 0],
+            [-cy*sz, cx*cz - sx*sy*sz, sx*cz + cx*sy*sz, 0],
+            [sy, -sx*cy, cx*cy, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float64)
+    else:
+        # Fallback for other orders - build individual matrices
+        R_x = np.array([
+            [1, 0, 0, 0],
+            [0, cx, sx, 0],
+            [0, -sx, cx, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float64)
+        
+        R_y = np.array([
+            [cy, 0, -sy, 0],
+            [0, 1, 0, 0],
+            [sy, 0, cy, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float64)
+        
+        R_z = np.array([
+            [cz, sz, 0, 0],
+            [-sz, cz, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float64)
+        
+        rotation_matrix = _IDENTITY_4x4.copy()
+        for axis in reversed(order):
+            if axis == 'x':
+                rotation_matrix = R_x @ rotation_matrix
+            elif axis == 'y':
+                rotation_matrix = R_y @ rotation_matrix
+            elif axis == 'z':
+                rotation_matrix = R_z @ rotation_matrix
+        return rotation_matrix
 
 def scale_matrix(*args):
     x,y,z = unpack_args(*args)
@@ -91,7 +120,7 @@ def explode_matrix(matrix):
     # Remove scale from the rotation matrix, handling zero scales
     rotation_matrix = np.zeros((3, 3))
     for i in range(3):
-        if np.isclose(scale[i], 0):
+        if abs(scale[i]) < 1e-10:
             # If scale is zero, use identity row
             rotation_matrix[i, i] = 1.0
         else:
@@ -164,7 +193,8 @@ def combine_transform_matrix(t,r,s, transform_order="srt"):
     return combined_matrix
     
 def identity():
-    return np.identity(4)
+    """Return a copy of the 4x4 identity matrix."""
+    return _IDENTITY_4x4.copy()
 
 # Use optimized transform_point from vec3 module (C extension if available)
 transform_point = vec3_transform_point
@@ -250,28 +280,51 @@ def create_transform_matrix_from_quad(points):
     if len(points) != 4:
         raise ValueError("Must provide exactly 4 world points")
     
-    corners = np.array(points)
+    p0, p1, p2, p3 = points
     
     # Calculate world space axes and origin from the quad corners
-    origin = corners[0]  # bottom-left corner
-    xAxis = normalize(corners[1] - corners[0])  # bottom edge direction
-    yAxis = normalize(corners[3] - corners[0])  # left edge direction  
-    zAxis = cross(xAxis, yAxis)                 # normal direction
+    # Use pure Python math to avoid numpy overhead
+    origin = (p0[0], p0[1], p0[2])
     
-    # Calculate scales
-    xScale = distance(corners[1], corners[0])
-    yScale = distance(corners[3], corners[0])
+    # xAxis = normalize(p1 - p0)
+    dx = p1[0] - p0[0]
+    dy = p1[1] - p0[1]
+    dz = p1[2] - p0[2]
+    xScale = math.sqrt(dx*dx + dy*dy + dz*dz)
+    if xScale > 1e-10:
+        inv_xScale = 1.0 / xScale
+        xAxis = (dx * inv_xScale, dy * inv_xScale, dz * inv_xScale)
+    else:
+        xAxis = (1.0, 0.0, 0.0)
+        xScale = 0.0
+    
+    # yAxis = normalize(p3 - p0)
+    dx = p3[0] - p0[0]
+    dy = p3[1] - p0[1]
+    dz = p3[2] - p0[2]
+    yScale = math.sqrt(dx*dx + dy*dy + dz*dz)
+    if yScale > 1e-10:
+        inv_yScale = 1.0 / yScale
+        yAxis = (dx * inv_yScale, dy * inv_yScale, dz * inv_yScale)
+    else:
+        yAxis = (0.0, 1.0, 0.0)
+        yScale = 0.0
+    
+    # zAxis = cross(xAxis, yAxis)
+    zAxis = (
+        xAxis[1] * yAxis[2] - xAxis[2] * yAxis[1],
+        xAxis[2] * yAxis[0] - xAxis[0] * yAxis[2],
+        xAxis[0] * yAxis[1] - xAxis[1] * yAxis[0]
+    )
     
     # Build transformation matrix in row-major format for row-vector multiplication (v @ M)
     # Basis vectors are in rows, translation in bottom row
-    matrix = np.array([
+    return np.array([
         [xAxis[0] * xScale, xAxis[1] * xScale, xAxis[2] * xScale, 0],
         [yAxis[0] * yScale, yAxis[1] * yScale, yAxis[2] * yScale, 0], 
         [zAxis[0],          zAxis[1],          zAxis[2],          0],
         [origin[0],         origin[1],         origin[2],         1]
-    ])
-    
-    return matrix
+    ], dtype=np.float64)
 
 def angle_between(vector1, vector2):
     dot_product = np.dot(vector1, vector2)
@@ -347,7 +400,8 @@ def combine_transform(localMatrix, parentMatrix, parentLocalMatrix, scaleInherit
     localScaleRotates = mat_mul(scale_matrix(sl), mat3_to_4(rl))        
         
     # Handle zero scales by using identity matrix for scaling
-    if np.isclose(determinant(parentLocalScales), 0):
+    det = determinant(parentLocalScales)
+    if abs(det) < 1e-10:
         invertParentLocalScales = identity()
         parentMatrix = build_transform_matrix(tp, (0,0,0), (1,1,1))
     else:
@@ -388,7 +442,7 @@ def find_intersection_ray_to_segment(point, direction, p1, p2):
     denom = np.linalg.norm(v_cross) ** 2
     
     # If the denominator is zero, the lines are parallel
-    if np.isclose(denom, 0):
+    if abs(denom) < 1e-10:
         return None
     
     # Calculate the vector from the segment start to the ray origin

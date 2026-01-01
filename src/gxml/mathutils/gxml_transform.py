@@ -48,7 +48,8 @@ class GXMLTransform:
         return self.transform_direction((0.0, 0.0, -1.0))
     
     def sceneToLocal(self, point):
-        if np.isclose(GXMLMath.determinant(self.transformationMatrix), 0):
+        det = GXMLMath.determinant(self.transformationMatrix)
+        if abs(det) < 1e-10:
             return [0,0,0]
         
         inv = GXMLMath.invert(self.transformationMatrix)
@@ -71,7 +72,9 @@ class GXMLTransform:
             parentWorldTransform = parentTransform.transformationMatrix
             parentLocalTransform = parentTransform.localTransformationMatrix
             
-            if np.isclose(parentTransform.scale, 0.0).any():
+            # Check if any scale component is near zero (faster than np.isclose)
+            ps = parentTransform.scale
+            if abs(ps[0]) < 1e-10 or abs(ps[1]) < 1e-10 or abs(ps[2]) < 1e-10:
                 parentWorldTransform = GXMLMath.build_transform_matrix(parentTransform.translation, parentTransform.rotation, (1,1,1))
                 parentLocalTransform = GXMLMath.build_transform_matrix(parentTransform.translation, parentTransform.rotation, (1,1,1))
             
