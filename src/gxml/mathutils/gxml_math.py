@@ -1,5 +1,6 @@
 import numpy as np
 import math
+from .vec3 import Vec3
 #from scipy.spatial.transform import Rotation as R
 
 
@@ -166,29 +167,30 @@ def identity():
     return np.identity(4)
 
 def transform_point(point, matrix):
-    # Avoid creating new arrays when possible
-    if isinstance(matrix, np.ndarray) and matrix.shape == (4, 4):
-        # Fast path: matrix is already a 4x4 numpy array
-        # Uses row-vector * matrix convention (same as np.dot(row_vec, matrix))
-        x, y, z = point[0], point[1], point[2]
+    """Transform a 3D point by a 4x4 matrix. Returns Vec3 for operator support."""
+    x, y, z = point[0], point[1], point[2]
+    
+    # Check if it's a numpy array (use numpy indexing) or list (use list indexing)
+    if isinstance(matrix, np.ndarray):
         w = x * matrix[0, 3] + y * matrix[1, 3] + z * matrix[2, 3] + matrix[3, 3]
         if w != 0:
             inv_w = 1.0 / w
-            return np.array([
+            return Vec3(
                 (x * matrix[0, 0] + y * matrix[1, 0] + z * matrix[2, 0] + matrix[3, 0]) * inv_w,
                 (x * matrix[0, 1] + y * matrix[1, 1] + z * matrix[2, 1] + matrix[3, 1]) * inv_w,
                 (x * matrix[0, 2] + y * matrix[1, 2] + z * matrix[2, 2] + matrix[3, 2]) * inv_w
-            ])
-    
-    # Fallback for non-numpy or wrong shape
-    point_h = np.array([point[0], point[1], point[2], 1])
-    matrix = np.asarray(matrix)
-    
-    if matrix.shape != (4, 4): 
-        raise ValueError("Transformation matrix must be 4x4")
-    
-    transformed_point_h = mat_mul(point_h, matrix)
-    return np.array(transformed_point_h[:3] / transformed_point_h[3])
+            )
+    else:
+        # List-of-lists matrix
+        w = x * matrix[0][3] + y * matrix[1][3] + z * matrix[2][3] + matrix[3][3]
+        if w != 0:
+            inv_w = 1.0 / w
+            return Vec3(
+                (x * matrix[0][0] + y * matrix[1][0] + z * matrix[2][0] + matrix[3][0]) * inv_w,
+                (x * matrix[0][1] + y * matrix[1][1] + z * matrix[2][1] + matrix[3][1]) * inv_w,
+                (x * matrix[0][2] + y * matrix[1][2] + z * matrix[2][2] + matrix[3][2]) * inv_w
+            )
+    return Vec3(0.0, 0.0, 0.0)
     
 # Rotate the vector by the input transformation matrix. The rotation component is extracted from the matrix and used to rotate the vector
 # while ensuring its length stays unmodified.    
@@ -197,36 +199,66 @@ def transform_direction(vector, matrix):
     return mat_mul(np.array(vector), r)
 
 def distance(p1, p2):
-    return np.linalg.norm(np.array(p2) - np.array(p1))
+    """Distance between two points. Works with tuples, lists, or arrays."""
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    dz = p2[2] - p1[2]
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
 
 def length(vector):
-    return np.linalg.norm(vector)
+    """Length of a vector. Works with tuples, lists, or arrays."""
+    return math.sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2])
+
+def sub3(a, b):
+    """Subtract two 3D vectors. Returns tuple."""
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+def add3(a, b):
+    """Add two 3D vectors. Returns tuple."""
+    return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
+
+def mul3(v, s):
+    """Multiply vector by scalar. Returns tuple."""
+    return (v[0] * s, v[1] * s, v[2] * s)
+
+def neg3(v):
+    """Negate vector. Returns tuple."""
+    return (-v[0], -v[1], -v[2])
+
+def dot3(a, b):
+    """Dot product of two 3D vectors."""
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
 def normalize(vector):
-    magnitude = np.linalg.norm(vector)
-    if magnitude == 0:
+    """Normalize a vector. Returns tuple."""
+    mag = math.sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2])
+    if mag < 1e-10:
         raise ValueError("Cannot normalize a zero vector")
-    return vector / magnitude
+    inv_mag = 1.0 / mag
+    return (vector[0] * inv_mag, vector[1] * inv_mag, vector[2] * inv_mag)
 
 def safe_normalize(vector):
-    magnitude = np.linalg.norm(vector)
-    if magnitude == 0:
-        return vector * 0
-    return vector / magnitude
+    """Normalize a vector, returning zero vector if input is zero. Returns tuple."""
+    mag = math.sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2])
+    if mag < 1e-10:
+        return (0.0, 0.0, 0.0)
+    inv_mag = 1.0 / mag
+    return (vector[0] * inv_mag, vector[1] * inv_mag, vector[2] * inv_mag)
 
 def cross(vector1, vector2):
     return np.cross(vector1, vector2)
 
 def cross3(a, b):
-    """Fast 3D cross product without numpy overhead."""
-    return np.array([
+    """Fast 3D cross product. Returns tuple."""
+    return (
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0]
-    ])
+    )
 
 def dot_product(vector1, vector2):
-    return np.dot(vector1, vector2)
+    """Dot product - works with any indexable type."""
+    return vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector2[2]
 
 def create_transform_matrix_from_quad(points):
     """
@@ -529,29 +561,25 @@ def is_point_on_line_segment(point, p1, p2, tol=1e-6):
     return True
 
 def intersect_line_with_plane(line_point, line_direction, plane_point, plane_normal):
-    # Convert to numpy arrays if needed
-    if not isinstance(line_point, np.ndarray):
-        line_point = np.asarray(line_point)
-    if not isinstance(line_direction, np.ndarray):
-        line_direction = np.asarray(line_direction)
-    if not isinstance(plane_point, np.ndarray):
-        plane_point = np.asarray(plane_point)
-    if not isinstance(plane_normal, np.ndarray):
-        plane_normal = np.asarray(plane_normal)
+    """Intersect a line with a plane. Returns Vec3 or None."""
+    # Extract coordinates directly (works for tuples, lists, arrays)
+    lpx, lpy, lpz = line_point[0], line_point[1], line_point[2]
+    ldx, ldy, ldz = line_direction[0], line_direction[1], line_direction[2]
+    ppx, ppy, ppz = plane_point[0], plane_point[1], plane_point[2]
+    pnx, pny, pnz = plane_normal[0], plane_normal[1], plane_normal[2]
     
-    # Calculate the denominator using inline dot product
-    denom = line_direction[0]*plane_normal[0] + line_direction[1]*plane_normal[1] + line_direction[2]*plane_normal[2]
+    # Dot product of line direction and plane normal
+    denom = ldx * pnx + ldy * pny + ldz * pnz
     
     # If the denominator is zero, the line is parallel to the plane
     if abs(denom) < 1e-10:
         return None
     
-    # Calculate the distance from the line point to the plane
-    diff = plane_point - line_point
-    t = (diff[0]*plane_normal[0] + diff[1]*plane_normal[1] + diff[2]*plane_normal[2]) / denom
+    # Calculate t: (plane_point - line_point) · plane_normal / denom
+    t = ((ppx - lpx) * pnx + (ppy - lpy) * pny + (ppz - lpz) * pnz) / denom
     
     # Calculate the intersection point
-    return line_point + t * line_direction
+    return Vec3(lpx + t * ldx, lpy + t * ldy, lpz + t * ldz)
 
 
 def intersect_lines_2d(line1, line2, plane='xz', tol=1e-9):
@@ -601,23 +629,26 @@ def intersect_lines_2d(line1, line2, plane='xz', tol=1e-9):
 
 
 def project_point_onto_plane(point, plane_point, plane_normal):
-    point = np.array(point)
-    plane_point = np.array(plane_point)
-    plane_normal = np.array(plane_normal)
+    """Project point onto plane. Uses pure Python math for performance."""
+    px, py, pz = point[0], point[1], point[2]
+    ppx, ppy, ppz = plane_point[0], plane_point[1], plane_point[2]
     
-    # Normalize the plane normal
-    plane_normal = normalize(plane_normal)
+    # Normalize the plane normal (pure Python)
+    nx, ny, nz = plane_normal[0], plane_normal[1], plane_normal[2]
+    mag = math.sqrt(nx * nx + ny * ny + nz * nz)
+    if mag < 1e-10:
+        return Vec3(px, py, pz)
+    inv_mag = 1.0 / mag
+    nx, ny, nz = nx * inv_mag, ny * inv_mag, nz * inv_mag
     
     # Calculate the vector from the plane point to the point
-    point_vector = point - plane_point
+    vx, vy, vz = px - ppx, py - ppy, pz - ppz
     
-    # Calculate the distance from the point to the plane
-    distance = np.dot(point_vector, plane_normal)
+    # Calculate the distance from the point to the plane (dot product)
+    distance = vx * nx + vy * ny + vz * nz
     
     # Project the point onto the plane
-    projected_point = point - distance * plane_normal
-    
-    return projected_point
+    return Vec3(px - distance * nx, py - distance * ny, pz - distance * nz)
 
 def is_point_inside_polygon(point, polygon):
     """

@@ -192,8 +192,8 @@ class GXMLConstructLayout(GXMLBaseLayout):
         intersectionPoint = self.find_intersection_point(spanTransform, d3, attachPoint)
         
         if intersectionPoint is None:
-            angle1 = GXMLMath.angle_between(d1, GXMLMath.safe_normalize(spanP1 - attachPoint))
-            angle2 = GXMLMath.angle_between(d1, GXMLMath.safe_normalize(spanP2 - attachPoint))
+            angle1 = GXMLMath.angle_between(d1, GXMLMath.safe_normalize(GXMLMath.sub3(spanP1, attachPoint)))
+            angle2 = GXMLMath.angle_between(d1, GXMLMath.safe_normalize(GXMLMath.sub3(spanP2, attachPoint)))
             
             angleDiff1 = abs(angle1 - angle)
             angleDiff2 = abs(angle2 - angle)
@@ -215,7 +215,7 @@ class GXMLConstructLayout(GXMLBaseLayout):
         
         right = attachTransform.right() if attachTransform else element.transform.right()
         
-        offset = spanPoint - attachPoint
+        offset = GXMLMath.sub3(spanPoint, attachPoint)
         distance = GXMLMath.length(offset)
         
         if(distance == 0):

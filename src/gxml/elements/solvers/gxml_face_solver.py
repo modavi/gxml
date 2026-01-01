@@ -16,6 +16,7 @@ Key data structures:
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from functools import lru_cache
 from typing import Tuple, Optional, List, Dict
 
 import numpy as np

@@ -2,36 +2,40 @@
 GXMLRay - A ray with origin, direction, and length.
 """
 
-import numpy as np
+import math
 from dataclasses import dataclass
 from typing import Optional
+from .vec3 import Vec3
 
 
 @dataclass
 class GXMLRay:
-    """A ray with origin, direction, and length."""
-    origin: np.ndarray
-    direction: np.ndarray  # Normalized
+    """A ray with origin, direction, and length. Uses Vec3 for operator support."""
+    origin: Vec3  # Position
+    direction: Vec3  # Normalized direction
     length: float
     
-    def point_at_t(self, t: float) -> np.ndarray:
+    def point_at_t(self, t: float) -> Vec3:
         """Get a point along the ray at parameter t (0-1 maps to origin-end)."""
-        return self.origin + self.direction * (t * self.length)
+        dist = t * self.length
+        return self.origin + self.direction * dist
     
     def project_point(self, point) -> float:
         """Project a point onto the ray and return the t-value (0-1 range)."""
-        # Inline dot product for performance
-        dx = point[0] - self.origin[0]
-        dy = point[1] - self.origin[1]
-        dz = point[2] - self.origin[2]
-        d = self.direction
-        return (dx * d[0] + dy * d[1] + dz * d[2]) / self.length
+        # Use Vec3 for the diff, then dot product
+        diff = Vec3(point) - self.origin
+        return diff.dot(self.direction) / self.length
     
     @staticmethod
-    def from_points(start: np.ndarray, end: np.ndarray, tolerance: float = 1e-6) -> Optional['GXMLRay']:
+    def from_points(start, end, tolerance: float = 1e-6) -> Optional['GXMLRay']:
         """Create a GXMLRay from two points. Returns None if points are too close."""
-        direction = end - start
-        length = np.linalg.norm(direction)
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        dz = end[2] - start[2]
+        length = math.sqrt(dx * dx + dy * dy + dz * dz)
         if length < tolerance:
             return None
-        return GXMLRay(origin=start, direction=direction / length, length=length)
+        inv_length = 1.0 / length
+        origin = Vec3(start[0], start[1], start[2])
+        direction = Vec3(dx * inv_length, dy * inv_length, dz * inv_length)
+        return GXMLRay(origin=origin, direction=direction, length=length)

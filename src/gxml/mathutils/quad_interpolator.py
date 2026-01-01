@@ -9,17 +9,17 @@ class QuadInterpolator(object):
     not a renderable element. For renderable quad elements, see elements.gxml_quad.GXMLQuad.
     """
     def __init__(self, p0, p1, p2, p3):
-        # Store as flat arrays for faster indexing
-        self.p0 = np.asarray(p0, dtype=np.float64)
-        self.p1 = np.asarray(p1, dtype=np.float64)
-        self.p2 = np.asarray(p2, dtype=np.float64)
-        self.p3 = np.asarray(p3, dtype=np.float64)
+        # Store points as tuples for fast indexing (no numpy overhead)
+        self.p0 = (float(p0[0]), float(p0[1]), float(p0[2]))
+        self.p1 = (float(p1[0]), float(p1[1]), float(p1[2]))
+        self.p2 = (float(p2[0]), float(p2[1]), float(p2[2]))
+        self.p3 = (float(p3[0]), float(p3[1]), float(p3[2]))
     
     def get_interpolated_point(self, point):
         return self.bilinear_interpolate_point(point)
     
     def bilinear_interpolate_point(self, point):
-        # Inline lerp operations to avoid function call overhead
+        # Inline lerp operations - returns tuple for performance
         t = point[0]
         s = point[1]
         p0, p1, p2, p3 = self.p0, self.p1, self.p2, self.p3
@@ -39,4 +39,4 @@ class QuadInterpolator(object):
         py = l1_y + s * (l2_y - l1_y)
         pz = l1_z + s * (l2_z - l1_z)
         
-        return np.array([px, py, point[2] + pz])
+        return (px, py, point[2] + pz)

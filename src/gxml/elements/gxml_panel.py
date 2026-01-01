@@ -357,13 +357,13 @@ class GXMLPanel(GXMLLayoutElement):
         # Check primary axis (width/length)
         start_point = self.transform_point((0, 0, 0))
         end_point = self.transform_point((1, 0, 0))
-        primary_length = np.linalg.norm(end_point - start_point)
+        primary_length = GXMLMath.distance(start_point, end_point)
         if primary_length < tolerance:
             return False
         
         # Check secondary axis (height)
         top_point = self.transform_point((0, 1, 0))
-        secondary_length = np.linalg.norm(top_point - start_point)
+        secondary_length = GXMLMath.distance(start_point, top_point)
         if secondary_length < tolerance:
             return False
         

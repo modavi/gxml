@@ -53,9 +53,8 @@ class GXMLTransform:
         
         inv = GXMLMath.invert(self.transformationMatrix)
         local_point = GXMLMath.transform_point(point, inv)
-        minLocal = np.array([0, 0, 0])
-        maxLocal = np.array([1, 1, 1])
-        return (local_point - minLocal) / (maxLocal - minLocal)
+        # Already in 0-1 space, just return as list
+        return [local_point[0], local_point[1], local_point[2]]
 
     def transform_point(self, point):
         return GXMLMath.transform_point(point, self.transformationMatrix)
