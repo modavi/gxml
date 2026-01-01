@@ -1,5 +1,4 @@
 import numpy as np
-import mathutils.gxml_math as GXMLMath
 
 
 class QuadInterpolator(object):
@@ -10,14 +9,11 @@ class QuadInterpolator(object):
     not a renderable element. For renderable quad elements, see elements.gxml_quad.GXMLQuad.
     """
     def __init__(self, p0, p1, p2, p3):
-        self.points = [
-            np.asarray(p0, dtype=np.float64),
-            np.asarray(p1, dtype=np.float64),
-            np.asarray(p2, dtype=np.float64),
-            np.asarray(p3, dtype=np.float64)
-        ]
-        # Pre-allocate output array for bilinear interpolation
-        self._temp_result = np.zeros(3, dtype=np.float64)
+        # Store as flat arrays for faster indexing
+        self.p0 = np.asarray(p0, dtype=np.float64)
+        self.p1 = np.asarray(p1, dtype=np.float64)
+        self.p2 = np.asarray(p2, dtype=np.float64)
+        self.p3 = np.asarray(p3, dtype=np.float64)
     
     def get_interpolated_point(self, point):
         return self.bilinear_interpolate_point(point)
@@ -26,7 +22,7 @@ class QuadInterpolator(object):
         # Inline lerp operations to avoid function call overhead
         t = point[0]
         s = point[1]
-        p0, p1, p2, p3 = self.points
+        p0, p1, p2, p3 = self.p0, self.p1, self.p2, self.p3
         
         # l1 = lerp(t, p0, p1) = p0 + t * (p1 - p0)
         # l2 = lerp(t, p3, p2) = p3 + t * (p2 - p3)
@@ -43,7 +39,4 @@ class QuadInterpolator(object):
         py = l1_y + s * (l2_y - l1_y)
         pz = l1_z + s * (l2_z - l1_z)
         
-        self._temp_result[0] = px
-        self._temp_result[1] = py
-        self._temp_result[2] = point[2] + pz
-        return self._temp_result.copy()
+        return np.array([px, py, point[2] + pz])

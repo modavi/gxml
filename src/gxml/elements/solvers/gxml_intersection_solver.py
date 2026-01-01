@@ -233,10 +233,14 @@ class Intersection:
     type: IntersectionType
     position: np.ndarray
     panels: List[PanelEntry]
+    _panel_lookup: dict = None  # Cached lookup dict, built on first access
     
     def get_entry(self, panel: 'GXMLPanel') -> Optional[PanelEntry]:
         """Get the PanelEntry for a specific panel, or None if not in this intersection."""
-        return next((e for e in self.panels if e.panel == panel), None)
+        # Build lookup cache on first access
+        if self._panel_lookup is None:
+            object.__setattr__(self, '_panel_lookup', {e.panel: e for e in self.panels})
+        return self._panel_lookup.get(panel)
     
     def get_other_panels(self, panel: 'GXMLPanel') -> List['GXMLPanel']:
         """Get all panels at this intersection except the specified one."""
@@ -615,12 +619,15 @@ class IntersectionSolver:
                 intersection_type = IntersectionType.CROSSING
             
             # Sort panels counter-clockwise around intersection
-            def get_angle(panel: GXMLPanel) -> float:
-                start = panel.transform_point([PanelEndpoint.START.value, 0, 0])
-                end = panel.transform_point([PanelEndpoint.END.value, 0, 0])
+            # Pre-compute angles once instead of in sort key (avoids repeated transform_point calls)
+            panel_angles = {}
+            for panel in unique_panels:
+                # Use cached primary axis ray for start/end
+                ray = panel.get_primary_axis_ray()
+                start = ray.origin
+                end = ray.origin + ray.direction
                 
                 # Determine which direction to use based on which endpoint is at center
-                # Use manual distance check instead of np.allclose
                 diff = start - position
                 dist_sq = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]
                 if dist_sq < DISTANCE_TOLERANCE * DISTANCE_TOLERANCE:
@@ -629,9 +636,9 @@ class IntersectionSolver:
                     direction = start - end
                 
                 # Project to XZ plane and get angle
-                return math.atan2(direction[0], direction[2])
+                panel_angles[panel] = math.atan2(direction[0], direction[2])
             
-            sorted_panels = sorted(unique_panels.keys(), key=get_angle)
+            sorted_panels = sorted(unique_panels.keys(), key=lambda p: panel_angles[p])
             
             # Create intersection with PanelEntry objects in sorted order
             participating = [Intersection.PanelEntry(panel, unique_panels[panel]) for panel in sorted_panels]

@@ -18,9 +18,14 @@ class GXMLRay:
         """Get a point along the ray at parameter t (0-1 maps to origin-end)."""
         return self.origin + self.direction * (t * self.length)
     
-    def project_point(self, point: np.ndarray) -> float:
+    def project_point(self, point) -> float:
         """Project a point onto the ray and return the t-value (0-1 range)."""
-        return np.dot(point - self.origin, self.direction) / self.length
+        # Inline dot product for performance
+        dx = point[0] - self.origin[0]
+        dy = point[1] - self.origin[1]
+        dz = point[2] - self.origin[2]
+        d = self.direction
+        return (dx * d[0] + dy * d[1] + dz * d[2]) / self.length
     
     @staticmethod
     def from_points(start: np.ndarray, end: np.ndarray, tolerance: float = 1e-6) -> Optional['GXMLRay']:

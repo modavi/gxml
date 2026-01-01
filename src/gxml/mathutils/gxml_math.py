@@ -447,48 +447,63 @@ def find_intersection_between_segments(p1, p2, p3, p4, tol=1e-6):
     Returns:
         The intersection point as a numpy array, or None if segments don't intersect
     """
-    # Use asarray to avoid copies if already numpy arrays
-    if not isinstance(p1, np.ndarray):
-        p1 = np.asarray(p1)
-    if not isinstance(p2, np.ndarray):
-        p2 = np.asarray(p2)
-    if not isinstance(p3, np.ndarray):
-        p3 = np.asarray(p3)
-    if not isinstance(p4, np.ndarray):
-        p4 = np.asarray(p4)
+    # Extract coordinates directly (works for arrays, lists, tuples)
+    p1x, p1y, p1z = p1[0], p1[1], p1[2]
+    p2x, p2y, p2z = p2[0], p2[1], p2[2]
+    p3x, p3y, p3z = p3[0], p3[1], p3[2]
+    p4x, p4y, p4z = p4[0], p4[1], p4[2]
     
-    # Calculate the vectors
-    segment1 = p2 - p1
-    segment2 = p4 - p3
+    # Calculate the segment vectors
+    s1x, s1y, s1z = p2x - p1x, p2y - p1y, p2z - p1z
+    s2x, s2y, s2z = p4x - p3x, p4y - p3y, p4z - p3z
     
-    # Calculate the cross product of the segment vectors (use inline cross for speed)
-    cross_dir = cross3(segment1, segment2)
-    denom = cross_dir[0]*cross_dir[0] + cross_dir[1]*cross_dir[1] + cross_dir[2]*cross_dir[2]
+    # Calculate cross product of segment vectors (inline)
+    cx = s1y * s2z - s1z * s2y
+    cy = s1z * s2x - s1x * s2z
+    cz = s1x * s2y - s1y * s2x
+    denom = cx * cx + cy * cy + cz * cz
     
     # If the denominator is zero, the segments are parallel
-    if denom < tol * tol:
+    tol_sq = tol * tol
+    if denom < tol_sq:
         return None
     
-    # Calculate the vector from the start of the first segment to the start of the second segment
-    w = p3 - p1
+    # Calculate the vector from p1 to p3
+    wx, wy, wz = p3x - p1x, p3y - p1y, p3z - p1z
     
-    # Calculate the intersection parameters (inline cross products)
-    w_cross_seg2 = cross3(w, segment2)
-    w_cross_seg1 = cross3(w, segment1)
-    t1 = (w_cross_seg2[0]*cross_dir[0] + w_cross_seg2[1]*cross_dir[1] + w_cross_seg2[2]*cross_dir[2]) / denom
-    t2 = (w_cross_seg1[0]*cross_dir[0] + w_cross_seg1[1]*cross_dir[1] + w_cross_seg1[2]*cross_dir[2]) / denom
+    # Calculate w × segment2 (for t1)
+    wcs2_x = wy * s2z - wz * s2y
+    wcs2_y = wz * s2x - wx * s2z
+    wcs2_z = wx * s2y - wy * s2x
+    t1 = (wcs2_x * cx + wcs2_y * cy + wcs2_z * cz) / denom
     
-    # Check if the intersection points are within the segments (with tolerance for floating point)
-    if -tol <= t1 <= 1 + tol and -tol <= t2 <= 1 + tol:
-        intersection1 = p1 + t1 * segment1
-        intersection2 = p3 + t2 * segment2
-        
-        # Check if the intersection points are the same (within tolerance)
-        # Manual distance check instead of np.allclose
-        diff = intersection1 - intersection2
-        dist_sq = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]
-        if dist_sq < tol * tol:
-            return intersection1
+    # Check if t1 is within segment bounds early (avoid computing t2 if not needed)
+    if t1 < -tol or t1 > 1 + tol:
+        return None
+    
+    # Calculate w × segment1 (for t2)
+    wcs1_x = wy * s1z - wz * s1y
+    wcs1_y = wz * s1x - wx * s1z
+    wcs1_z = wx * s1y - wy * s1x
+    t2 = (wcs1_x * cx + wcs1_y * cy + wcs1_z * cz) / denom
+    
+    # Check if t2 is within segment bounds
+    if t2 < -tol or t2 > 1 + tol:
+        return None
+    
+    # Compute both intersection points
+    ix1 = p1x + t1 * s1x
+    iy1 = p1y + t1 * s1y
+    iz1 = p1z + t1 * s1z
+    
+    ix2 = p3x + t2 * s2x
+    iy2 = p3y + t2 * s2y
+    iz2 = p3z + t2 * s2z
+    
+    # Check if the intersection points are the same (within tolerance)
+    dx, dy, dz = ix1 - ix2, iy1 - iy2, iz1 - iz2
+    if dx * dx + dy * dy + dz * dz < tol_sq:
+        return np.array([ix1, iy1, iz1])
     
     return None
 

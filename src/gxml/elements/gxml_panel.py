@@ -314,11 +314,10 @@ class GXMLPanel(GXMLLayoutElement):
         Returns the primary axis direction (start→end, +X in local space) in world coordinates.
         This is the panel's flow direction.
         """
-        start_point = self.transform_point((0, 0, 0))
-        end_point = self.transform_point((1, 0, 0))
-        axis = end_point - start_point
-        norm = np.linalg.norm(axis)
-        return axis / norm if norm > 0 else axis
+        ray = self.get_primary_axis_ray()
+        if ray is None:
+            return np.array([1.0, 0.0, 0.0])
+        return ray.direction
     
     def get_secondary_axis(self):
         """
@@ -453,6 +452,17 @@ class GXMLPanel(GXMLLayoutElement):
             else:
                 return PanelSide.BACK
     
+    # Class-level lookup table for face center local coordinates
+    # Structure: (t_offset, s_offset, z_factor) where z_factor is multiplied by half_thickness
+    _FACE_CENTER_LOCAL_FACTORS = {
+        PanelSide.FRONT: (0.5, 0.5, 1.0),
+        PanelSide.BACK: (0.5, 0.5, -1.0),
+        PanelSide.TOP: (0.5, 1.0, 0.0),
+        PanelSide.BOTTOM: (0.5, 0.0, 0.0),
+        PanelSide.START: (0.0, 0.5, 0.0),
+        PanelSide.END: (1.0, 0.5, 0.0),
+    }
+    
     def get_face_center_local(self, face: PanelSide) -> tuple:
         """
         Get the local-space coordinates of a face's center point.
@@ -467,16 +477,10 @@ class GXMLPanel(GXMLLayoutElement):
         Returns:
             (t, s, z) tuple in panel local space
         """
-        half_thickness = self.thickness / 2
-        offsets = {
-            PanelSide.FRONT: (0.5, 0.5, half_thickness),
-            PanelSide.BACK: (0.5, 0.5, -half_thickness),
-            PanelSide.TOP: (0.5, 1.0, 0.0),
-            PanelSide.BOTTOM: (0.5, 0.0, 0.0),
-            PanelSide.START: (0.0, 0.5, 0.0),
-            PanelSide.END: (1.0, 0.5, 0.0),
-        }
-        return offsets.get(face, (0.5, 0.5, 0.0))
+        factors = self._FACE_CENTER_LOCAL_FACTORS.get(face)
+        if factors is None:
+            return (0.5, 0.5, 0.0)
+        return (factors[0], factors[1], factors[2] * self.thickness / 2)
     
     def get_face_center_world(self, face: PanelSide) -> np.ndarray:
         """
