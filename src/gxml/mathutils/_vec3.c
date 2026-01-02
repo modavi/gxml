@@ -717,6 +717,231 @@ static PyObject *vec3_is_point_on_line_segment(PyObject *self, PyObject *args) {
 }
 
 /* Module method definitions */
+/* bilinear_interpolate(t, s, p0, p1, p2, p3) - Bilinear interpolation on a quad
+ * Returns the interpolated point as a tuple.
+ * Points p0-p3 are corners: p0=start-bottom, p1=end-bottom, p2=end-top, p3=start-top
+ */
+static PyObject *vec3_bilinear_interpolate(PyObject *self, PyObject *args) {
+    double t, s;
+    PyObject *p0_obj, *p1_obj, *p2_obj, *p3_obj;
+    double p0x, p0y, p0z, p1x, p1y, p1z, p2x, p2y, p2z, p3x, p3y, p3z;
+    
+    if (!PyArg_ParseTuple(args, "ddOOOO", &t, &s, &p0_obj, &p1_obj, &p2_obj, &p3_obj)) 
+        return NULL;
+    
+    if (!Vec3_extract(p0_obj, &p0x, &p0y, &p0z)) return NULL;
+    if (!Vec3_extract(p1_obj, &p1x, &p1y, &p1z)) return NULL;
+    if (!Vec3_extract(p2_obj, &p2x, &p2y, &p2z)) return NULL;
+    if (!Vec3_extract(p3_obj, &p3x, &p3y, &p3z)) return NULL;
+    
+    /* l1 = lerp(t, p0, p1) = p0 + t * (p1 - p0) */
+    double l1x = p0x + t * (p1x - p0x);
+    double l1y = p0y + t * (p1y - p0y);
+    double l1z = p0z + t * (p1z - p0z);
+    
+    /* l2 = lerp(t, p3, p2) = p3 + t * (p2 - p3) */
+    double l2x = p3x + t * (p2x - p3x);
+    double l2y = p3y + t * (p2y - p3y);
+    double l2z = p3z + t * (p2z - p3z);
+    
+    /* result = lerp(s, l1, l2) = l1 + s * (l2 - l1) */
+    return Py_BuildValue("(ddd)",
+        l1x + s * (l2x - l1x),
+        l1y + s * (l2y - l1y),
+        l1z + s * (l2z - l1z)
+    );
+}
+
+/* project_point_on_ray(point, ray_origin, ray_direction, ray_length) 
+ * Returns the t-value (0-1 range) of the projection.
+ */
+static PyObject *vec3_project_point_on_ray(PyObject *self, PyObject *args) {
+    PyObject *point_obj, *origin_obj, *dir_obj;
+    double ray_length;
+    double px, py, pz, ox, oy, oz, dx, dy, dz;
+    
+    if (!PyArg_ParseTuple(args, "OOOd", &point_obj, &origin_obj, &dir_obj, &ray_length)) 
+        return NULL;
+    
+    if (!Vec3_extract(point_obj, &px, &py, &pz)) return NULL;
+    if (!Vec3_extract(origin_obj, &ox, &oy, &oz)) return NULL;
+    if (!Vec3_extract(dir_obj, &dx, &dy, &dz)) return NULL;
+    
+    /* diff = point - origin */
+    double diff_x = px - ox;
+    double diff_y = py - oy;
+    double diff_z = pz - oz;
+    
+    /* dot(diff, direction) / length */
+    double dot = diff_x * dx + diff_y * dy + diff_z * dz;
+    return PyFloat_FromDouble(dot / ray_length);
+}
+
+/* batch_transform_points(points, matrix) - Transform multiple points by a 4x4 matrix
+ * Returns a list of tuples.
+ */
+static PyObject *vec3_batch_transform_points(PyObject *self, PyObject *args) {
+    PyObject *points_obj, *matrix_obj;
+    double m[4][4];
+    
+    if (!PyArg_ParseTuple(args, "OO", &points_obj, &matrix_obj)) return NULL;
+    
+    /* Extract 4x4 matrix */
+    for (int i = 0; i < 4; i++) {
+        PyObject *row = PySequence_GetItem(matrix_obj, i);
+        if (!row) return NULL;
+        
+        for (int j = 0; j < 4; j++) {
+            PyObject *item = PySequence_GetItem(row, j);
+            if (!item) {
+                Py_DECREF(row);
+                return NULL;
+            }
+            m[i][j] = PyFloat_AsDouble(item);
+            Py_DECREF(item);
+            if (PyErr_Occurred()) {
+                Py_DECREF(row);
+                return NULL;
+            }
+        }
+        Py_DECREF(row);
+    }
+    
+    /* Process all points */
+    Py_ssize_t n = PySequence_Size(points_obj);
+    if (n < 0) return NULL;
+    
+    PyObject *result = PyList_New(n);
+    if (!result) return NULL;
+    
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *point = PySequence_GetItem(points_obj, i);
+        if (!point) {
+            Py_DECREF(result);
+            return NULL;
+        }
+        
+        double x, y, z;
+        if (!Vec3_extract(point, &x, &y, &z)) {
+            Py_DECREF(point);
+            Py_DECREF(result);
+            return NULL;
+        }
+        Py_DECREF(point);
+        
+        double w = x * m[0][3] + y * m[1][3] + z * m[2][3] + m[3][3];
+        double inv_w = (fabs(w) < 1e-10) ? 0.0 : (1.0 / w);
+        
+        PyObject *transformed = Py_BuildValue("(ddd)",
+            (x * m[0][0] + y * m[1][0] + z * m[2][0] + m[3][0]) * inv_w,
+            (x * m[0][1] + y * m[1][1] + z * m[2][1] + m[3][1]) * inv_w,
+            (x * m[0][2] + y * m[1][2] + z * m[2][2] + m[3][2]) * inv_w
+        );
+        
+        if (!transformed) {
+            Py_DECREF(result);
+            return NULL;
+        }
+        PyList_SET_ITEM(result, i, transformed);
+    }
+    
+    return result;
+}
+
+/* batch_bilinear_transform(points_with_offsets, quad_points, matrix)
+ * Perform bilinear interpolation + matrix transform in a single call for multiple points.
+ * points_with_offsets: list of (t, s, z_offset) tuples
+ * quad_points: (p0, p1, p2, p3) - the quad corners for bilinear interpolation  
+ * matrix: 4x4 transformation matrix
+ * Returns: list of tuples (x, y, z)
+ */
+static PyObject *vec3_batch_bilinear_transform(PyObject *self, PyObject *args) {
+    PyObject *points_obj, *quad_obj, *matrix_obj;
+    double m[4][4];
+    double q0x, q0y, q0z, q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
+    
+    if (!PyArg_ParseTuple(args, "OOO", &points_obj, &quad_obj, &matrix_obj)) return NULL;
+    
+    /* Extract quad points */
+    PyObject *p0 = PySequence_GetItem(quad_obj, 0);
+    PyObject *p1 = PySequence_GetItem(quad_obj, 1);
+    PyObject *p2 = PySequence_GetItem(quad_obj, 2);
+    PyObject *p3 = PySequence_GetItem(quad_obj, 3);
+    if (!p0 || !p1 || !p2 || !p3) {
+        Py_XDECREF(p0); Py_XDECREF(p1); Py_XDECREF(p2); Py_XDECREF(p3);
+        return NULL;
+    }
+    if (!Vec3_extract(p0, &q0x, &q0y, &q0z) ||
+        !Vec3_extract(p1, &q1x, &q1y, &q1z) ||
+        !Vec3_extract(p2, &q2x, &q2y, &q2z) ||
+        !Vec3_extract(p3, &q3x, &q3y, &q3z)) {
+        Py_DECREF(p0); Py_DECREF(p1); Py_DECREF(p2); Py_DECREF(p3);
+        return NULL;
+    }
+    Py_DECREF(p0); Py_DECREF(p1); Py_DECREF(p2); Py_DECREF(p3);
+    
+    /* Extract 4x4 matrix */
+    for (int i = 0; i < 4; i++) {
+        PyObject *row = PySequence_GetItem(matrix_obj, i);
+        if (!row) return NULL;
+        for (int j = 0; j < 4; j++) {
+            PyObject *item = PySequence_GetItem(row, j);
+            if (!item) { Py_DECREF(row); return NULL; }
+            m[i][j] = PyFloat_AsDouble(item);
+            Py_DECREF(item);
+            if (PyErr_Occurred()) { Py_DECREF(row); return NULL; }
+        }
+        Py_DECREF(row);
+    }
+    
+    /* Process all points */
+    Py_ssize_t n = PySequence_Size(points_obj);
+    PyObject *result = PyList_New(n);
+    if (!result) return NULL;
+    
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *point_tuple = PySequence_GetItem(points_obj, i);
+        if (!point_tuple) { Py_DECREF(result); return NULL; }
+        
+        double t, s, z_offset;
+        if (!Vec3_extract(point_tuple, &t, &s, &z_offset)) {
+            Py_DECREF(point_tuple);
+            Py_DECREF(result);
+            return NULL;
+        }
+        Py_DECREF(point_tuple);
+        
+        /* Bilinear interpolation: l1 = lerp(t, p0, p1), l2 = lerp(t, p3, p2), p = lerp(s, l1, l2) */
+        double l1x = q0x + t * (q1x - q0x);
+        double l1y = q0y + t * (q1y - q0y);
+        double l1z = q0z + t * (q1z - q0z);
+        
+        double l2x = q3x + t * (q2x - q3x);
+        double l2y = q3y + t * (q2y - q3y);
+        double l2z = q3z + t * (q2z - q3z);
+        
+        double ix = l1x + s * (l2x - l1x);
+        double iy = l1y + s * (l2y - l1y);
+        double iz = l1z + s * (l2z - l1z) + z_offset;
+        
+        /* Matrix transform */
+        double w = ix * m[0][3] + iy * m[1][3] + iz * m[2][3] + m[3][3];
+        double inv_w = (fabs(w) < 1e-10) ? 0.0 : (1.0 / w);
+        
+        PyObject *transformed = Py_BuildValue("(ddd)",
+            (ix * m[0][0] + iy * m[1][0] + iz * m[2][0] + m[3][0]) * inv_w,
+            (ix * m[0][1] + iy * m[1][1] + iz * m[2][1] + m[3][1]) * inv_w,
+            (ix * m[0][2] + iy * m[1][2] + iz * m[2][2] + m[3][2]) * inv_w
+        );
+        
+        if (!transformed) { Py_DECREF(result); return NULL; }
+        PyList_SET_ITEM(result, i, transformed);
+    }
+    
+    return result;
+}
+
+
 static PyMethodDef vec3_methods[] = {
     {"transform_point", vec3_transform_point, METH_VARARGS, 
      "Transform a 3D point by a 4x4 matrix"},
@@ -744,6 +969,14 @@ static PyMethodDef vec3_methods[] = {
      "Cross product of two 3D vectors, returns tuple"},
     {"is_point_on_line_segment", vec3_is_point_on_line_segment, METH_VARARGS,
      "Check if point lies on line segment"},
+    {"bilinear_interpolate", vec3_bilinear_interpolate, METH_VARARGS,
+     "Bilinear interpolation on a quad: bilinear_interpolate(t, s, p0, p1, p2, p3)"},
+    {"project_point_on_ray", vec3_project_point_on_ray, METH_VARARGS,
+     "Project a point onto a ray and return the t-value"},
+    {"batch_transform_points", vec3_batch_transform_points, METH_VARARGS,
+     "Transform multiple points by a 4x4 matrix at once"},
+    {"batch_bilinear_transform", vec3_batch_bilinear_transform, METH_VARARGS,
+     "Bilinear interpolate + transform multiple points in one call"},
     {NULL, NULL, 0, NULL}
 };
 

@@ -5,7 +5,8 @@ from ._vec3 import (lerp as _c_lerp, mat4_invert as _c_mat4_invert,
                     find_interpolated_point as _c_find_interpolated_point,
                     mat4_multiply as _c_mat4_multiply,
                     cross_product as _c_cross_product,
-                    is_point_on_line_segment as _c_is_point_on_line_segment)
+                    is_point_on_line_segment as _c_is_point_on_line_segment,
+                    batch_transform_points as _c_batch_transform_points)
 #from scipy.spatial.transform import Rotation as R
 
 # Identity matrix as tuple-of-tuples (immutable)
@@ -224,6 +225,9 @@ def identity():
 
 # Use optimized transform_point from vec3 module (C extension if available)
 transform_point = vec3_transform_point
+
+# Batch transform multiple points by a 4x4 matrix at once (C extension)
+batch_transform_points = _c_batch_transform_points
     
 # Rotate the vector by the input transformation matrix. The rotation component is extracted from the matrix and used to rotate the vector
 # while ensuring its length stays unmodified.    

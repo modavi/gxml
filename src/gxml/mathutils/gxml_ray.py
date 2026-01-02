@@ -7,6 +7,13 @@ from dataclasses import dataclass
 from typing import Optional
 from .vec3 import Vec3
 
+# Import C extension function if available
+try:
+    from . import _vec3
+    _c_project_point_on_ray = _vec3.project_point_on_ray
+except ImportError:
+    _c_project_point_on_ray = None
+
 
 @dataclass
 class GXMLRay:
@@ -22,7 +29,9 @@ class GXMLRay:
     
     def project_point(self, point) -> float:
         """Project a point onto the ray and return the t-value (0-1 range)."""
-        # Use Vec3 for the diff, then dot product
+        if _c_project_point_on_ray:
+            return _c_project_point_on_ray(point, self.origin, self.direction, self.length)
+        # Fallback to Python
         diff = Vec3(point) - self.origin
         return diff.dot(self.direction) / self.length
     

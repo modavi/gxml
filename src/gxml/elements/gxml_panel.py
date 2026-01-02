@@ -8,7 +8,7 @@ from typing import Optional
 from elements.gxml_base_element import GXMLLayoutElement
 from gxml_types import *
 from gxml_profile import *
-from mathutils.quad_interpolator import QuadInterpolator
+from mathutils.quad_interpolator import QuadInterpolator, batch_bilinear_transform
 from mathutils.gxml_ray import GXMLRay
 import mathutils.gxml_math as GXMLMath
 import numpy as np
@@ -208,14 +208,14 @@ class GXMLPanel(GXMLLayoutElement):
         
         localPoints = self.get_local_points_from_side(side)
         
-        # Transform the points from local to world space
+        # Build list of (t, s, z_offset) for batch transform
         # corners are (t, s) values in parent panel's normalized space
         # Local points have (x, y, z) where the face's constant axis determines which
         # local coordinate maps to t and which maps to s:
         #   FRONT/BACK (z constant): x->t, y->s, z->thickness
         #   TOP/BOTTOM (y constant): x->t, s->thickness, y is fixed
         #   START/END (x constant): z->thickness, y->s, x is fixed
-        worldPoints = []
+        points_for_transform = []
         for lp in localPoints:
             # Map local (x, y, z) to corner (t, s) based on face type
             # Each face type has one constant axis and two varying axes
@@ -245,16 +245,20 @@ class GXMLPanel(GXMLLayoutElement):
             # For TOP/BOTTOM: (t, fixed_y, thickness_from_s)
             # For START/END: (fixed_x, s, thickness_from_z)
             if side in (PanelSide.FRONT, PanelSide.BACK):
-                local_for_transform = (t, s, (lp[2] - 0.5) * self.thickness)
+                points_for_transform.append((t, s, (lp[2] - 0.5) * self.thickness))
             elif side in (PanelSide.TOP, PanelSide.BOTTOM):
                 # y is fixed at the face position, s determines thickness offset
-                local_for_transform = (t, lp[1], (s - 0.5) * self.thickness)
+                points_for_transform.append((t, lp[1], (s - 0.5) * self.thickness))
             else:  # START, END
                 # x is fixed at the face position (0 for START, 1 for END)
-                local_for_transform = (lp[0], s, (lp[2] - 0.5) * self.thickness)
-            
-            world_point = self.transform_point(local_for_transform)
-            worldPoints.append(world_point)
+                points_for_transform.append((lp[0], s, (lp[2] - 0.5) * self.thickness))
+        
+        # Batch transform all 4 points at once using C extension
+        worldPoints = batch_bilinear_transform(
+            points_for_transform,
+            self.quad_interpolator.get_quad_points(),
+            self.transform.transformationMatrix
+        )
         
         # Build affine transformation matrix from 3 corners (p0, p1, p3)
         # This matrix maps the unit square to the parallelogram defined by those corners
@@ -264,10 +268,7 @@ class GXMLPanel(GXMLLayoutElement):
         # the parallelogram. We encode this deviation in the quad by transforming
         # all world points back to local space - this gives us the "ratio" quad.
         inv_matrix = GXMLMath.invert(matrix)
-        localQuadPoints = [
-            GXMLMath.transform_point(wp, inv_matrix)
-            for wp in worldPoints
-        ]
+        localQuadPoints = GXMLMath.batch_transform_points(worldPoints, inv_matrix)
         
         quad._interpolator = QuadInterpolator(localQuadPoints[0], localQuadPoints[1], 
                               localQuadPoints[2], localQuadPoints[3])
