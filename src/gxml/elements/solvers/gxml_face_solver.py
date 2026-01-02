@@ -21,6 +21,7 @@ from typing import Tuple, Optional, List, Dict
 
 import numpy as np
 
+import mathutils.gxml_math as GXMLMath
 from .gxml_intersection_solver import IntersectionSolution, Intersection, IntersectionType, Region
 from elements.gxml_panel import GXMLPanel, PanelSide
 from mathutils.gxml_math import intersect_line_with_plane
@@ -559,11 +560,11 @@ class FaceSolver:
         
         # Calculate offset: positive = trim inward, negative = overshoot
         if t_value < 0.5:  # START endpoint
-            offset_vector = intersection_point - face_corner
+            offset_vector = GXMLMath.sub3(intersection_point, face_corner)
         else:  # END endpoint
-            offset_vector = face_corner - intersection_point
+            offset_vector = GXMLMath.sub3(face_corner, intersection_point)
         
-        offset_distance = np.dot(offset_vector, ray.direction)
+        offset_distance = GXMLMath.dot3(offset_vector, ray.direction)
         t_offset = min(offset_distance / ray.length, 1.0)
         
         return t_offset

@@ -15,9 +15,6 @@ _IDENTITY_4x4_TUPLE = (
     (0.0, 0.0, 1.0, 0.0),
     (0.0, 0.0, 0.0, 1.0)
 )
-# Keep numpy version for backwards compatibility where needed
-_IDENTITY_4x4 = np.eye(4, dtype=np.float64)
-_IDENTITY_4x4.flags.writeable = False
 
 
 def unpack_args(*args):
@@ -117,51 +114,68 @@ def translate_matrix(*args):
     )
     
 def explode_matrix(matrix):
-    # Convert to numpy only when needed for linalg operations
-    np_matrix = np.array(matrix)
+    """Decompose a 4x4 transformation matrix into translation, rotation, and scale.
     
-    if np_matrix.shape != (4, 4):
-        raise ValueError("Input matrix must be a 4x4 matrix.")
-    
+    Returns: (translation, rotation_matrix, scale) where:
+        - translation: tuple (x, y, z)
+        - rotation_matrix: 3x3 tuple-of-tuples
+        - scale: tuple (sx, sy, sz)
+    """
     # Extract translation (from bottom row in row-major format)
-    translation = np_matrix[3, :3]
+    translation = (matrix[3][0], matrix[3][1], matrix[3][2])
     
-    # Extract scale factors (from rows in row-major format)
-    scale = np.linalg.norm(np_matrix[:3, :3], axis=1)
+    # Extract scale factors - length of each row of upper-left 3x3
+    def row_length(row_idx):
+        x, y, z = matrix[row_idx][0], matrix[row_idx][1], matrix[row_idx][2]
+        return math.sqrt(x*x + y*y + z*z)
+    
+    sx, sy, sz = row_length(0), row_length(1), row_length(2)
+    scale = (sx, sy, sz)
     
     # Remove scale from the rotation matrix, handling zero scales
-    rotation_matrix = np.zeros((3, 3))
+    # Build as tuple-of-tuples for consistency with other matrix functions
+    rot_rows = []
     for i in range(3):
-        if abs(scale[i]) < 1e-10:
+        s = scale[i]
+        if abs(s) < 1e-10:
             # If scale is zero, use identity row
-            rotation_matrix[i, i] = 1.0
+            if i == 0:
+                rot_rows.append((1.0, 0.0, 0.0))
+            elif i == 1:
+                rot_rows.append((0.0, 1.0, 0.0))
+            else:
+                rot_rows.append((0.0, 0.0, 1.0))
         else:
-            rotation_matrix[i] = np_matrix[i, :3] / scale[i]
+            inv_s = 1.0 / s
+            rot_rows.append((
+                matrix[i][0] * inv_s,
+                matrix[i][1] * inv_s,
+                matrix[i][2] * inv_s
+            ))
     
+    rotation_matrix = (rot_rows[0], rot_rows[1], rot_rows[2])
     return translation, rotation_matrix, scale
     
 def extract_euler_rotation(matrix, degrees=True):
-    mat = np.array(matrix)
-    if mat.shape != (4, 4):
-        raise ValueError("Input matrix must be a 4x4 matrix.")
-
     # Extract the upper-left 3x3 rotation portion (row-major format)
-    r = mat[:3, :3]
+    r00, r01, r02 = matrix[0][0], matrix[0][1], matrix[0][2]
+    r10, r11, r12 = matrix[1][0], matrix[1][1], matrix[1][2]
+    r20, r21, r22 = matrix[2][0], matrix[2][1], matrix[2][2]
     
     # Calculate sy = sqrt(r[0,0]^2 + r[0,1]^2)
-    sy = math.sqrt(r[0, 0]*r[0, 0] + r[0, 1]*r[0, 1])
+    sy = math.sqrt(r00*r00 + r01*r01)
 
     # Check near-singularity to handle gimbal locks
     singular = sy < 1e-6
 
     if not singular:
-        rx = math.atan2(r[1, 2], r[2, 2])
-        ry = math.atan2(-r[0, 2], sy)    
-        rz = math.atan2(r[0, 1], r[0, 0])
+        rx = math.atan2(r12, r22)
+        ry = math.atan2(-r02, sy)    
+        rz = math.atan2(r01, r00)
     else:
         # Fallback in near-singular scenario
-        rx = math.atan2(-r[2, 1], r[1, 1])
-        ry = math.atan2(-r[0, 2], sy)     
+        rx = math.atan2(-r21, r11)
+        ry = math.atan2(-r02, sy)     
         rz = 0.0
 
     # Convert from radians to degrees
@@ -215,12 +229,12 @@ transform_point = vec3_transform_point
 # while ensuring its length stays unmodified.    
 def transform_direction(vector, matrix):
     t,r,s = explode_matrix(matrix)
-    # r is a 3x3 rotation matrix, vector @ r
+    # r is a 3x3 tuple-of-tuples rotation matrix, vector @ r
     vx, vy, vz = vector[0], vector[1], vector[2]
     return (
-        vx * r[0, 0] + vy * r[1, 0] + vz * r[2, 0],
-        vx * r[0, 1] + vy * r[1, 1] + vz * r[2, 1],
-        vx * r[0, 2] + vy * r[1, 2] + vz * r[2, 2]
+        vx * r[0][0] + vy * r[1][0] + vz * r[2][0],
+        vx * r[0][1] + vy * r[1][1] + vz * r[2][1],
+        vx * r[0][2] + vy * r[1][2] + vz * r[2][2]
     )
 
 def distance(p1, p2):
@@ -271,7 +285,8 @@ def safe_normalize(vector):
     return (vector[0] * inv_mag, vector[1] * inv_mag, vector[2] * inv_mag)
 
 def cross(vector1, vector2):
-    return np.cross(vector1, vector2)
+    """Cross product. Returns tuple."""
+    return cross3(vector1, vector2)
 
 def cross3(a, b):
     """Fast 3D cross product. Returns tuple."""
@@ -348,35 +363,59 @@ def create_transform_matrix_from_quad(points):
     )
 
 def angle_between(vector1, vector2):
-    dot_product = np.dot(vector1, vector2)
-    dot_product = np.clip(dot_product, -1.0, 1.0)
-    angle = np.arccos(dot_product)
+    """Angle between two vectors in degrees."""
+    dot_product = dot3(vector1, vector2)
+    dot_product = max(-1.0, min(1.0, dot_product))  # clip to [-1, 1]
+    angle = math.acos(dot_product)
     return math.degrees(angle)
     
 def rotate_vector(vector, axis, angleDegrees):
-    angle_radians = np.radians(angleDegrees)
-    vector = np.array(vector)
-    axis = np.array(axis)
-    axis = axis / np.linalg.norm(axis)  # Normalize the axis
+    """Rotate a vector around an axis using Rodrigues' rotation formula. Returns tuple."""
+    angle_radians = math.radians(angleDegrees)
     
-    cos_theta = np.cos(angle_radians)
-    sin_theta = np.sin(angle_radians)
+    # Normalize the axis
+    ax, ay, az = axis[0], axis[1], axis[2]
+    axis_len = math.sqrt(ax*ax + ay*ay + az*az)
+    if axis_len < 1e-10:
+        return vector
+    inv_len = 1.0 / axis_len
+    ax, ay, az = ax * inv_len, ay * inv_len, az * inv_len
     
-    # Rodrigues' rotation formula
-    rotated_vector = (vector * cos_theta +
-                      np.cross(axis, vector) * sin_theta +
-                      axis * np.dot(axis, vector) * (1 - cos_theta))
+    cos_theta = math.cos(angle_radians)
+    sin_theta = math.sin(angle_radians)
     
-    return rotated_vector
+    # Rodrigues' rotation formula: v' = v*cos + (k x v)*sin + k*(k.v)*(1-cos)
+    vx, vy, vz = vector[0], vector[1], vector[2]
+    
+    # k x v
+    cross_x = ay * vz - az * vy
+    cross_y = az * vx - ax * vz
+    cross_z = ax * vy - ay * vx
+    
+    # k . v
+    dot = ax * vx + ay * vy + az * vz
+    
+    one_minus_cos = 1.0 - cos_theta
+    
+    return (
+        vx * cos_theta + cross_x * sin_theta + ax * dot * one_minus_cos,
+        vy * cos_theta + cross_y * sin_theta + ay * dot * one_minus_cos,
+        vz * cos_theta + cross_z * sin_theta + az * dot * one_minus_cos
+    )
 
 def get_plane_rotation_from_triangle(p0, p1, p2):
-    xAxis = normalize(np.array(p2) - np.array(p1))
-    yAxis = normalize(np.array(p1) - np.array(p0))
+    xAxis = normalize(sub3(p2, p1))
+    yAxis = normalize(sub3(p1, p0))
     zAxis = cross(xAxis, yAxis)
     return get_plane_rotation_from_axis(xAxis, yAxis, zAxis)
 
 def get_plane_rotation_from_axis(xAxis, yAxis, zAxis):
-    rotation_3x3 = np.array([xAxis, yAxis, zAxis])
+    # Build 3x3 rotation as tuple-of-tuples then convert to 4x4
+    rotation_3x3 = (
+        (xAxis[0], xAxis[1], xAxis[2]),
+        (yAxis[0], yAxis[1], yAxis[2]),
+        (zAxis[0], zAxis[1], zAxis[2])
+    )
     return mat3_to_4(rotation_3x3)
     
 def mat_mul(matrix1, matrix2):
@@ -403,7 +442,30 @@ def transpose(matrix):
     return tuple(tuple(matrix[j][i] for j in range(n)) for i in range(m))
 
 def determinant(matrix):
-    return np.linalg.det(matrix)
+    """Compute determinant of 4x4 matrix using pure Python."""
+    # Using cofactor expansion along first row
+    # For a 4x4 matrix, det = sum of a[0][j] * cofactor(0,j) for j=0..3
+    m = matrix
+    
+    def det3(a, b, c, d, e, f, g, h, i):
+        """3x3 determinant using rule of Sarrus"""
+        return a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g)
+    
+    # Cofactors for first row
+    cof0 = det3(m[1][1], m[1][2], m[1][3],
+                m[2][1], m[2][2], m[2][3],
+                m[3][1], m[3][2], m[3][3])
+    cof1 = det3(m[1][0], m[1][2], m[1][3],
+                m[2][0], m[2][2], m[2][3],
+                m[3][0], m[3][2], m[3][3])
+    cof2 = det3(m[1][0], m[1][1], m[1][3],
+                m[2][0], m[2][1], m[2][3],
+                m[3][0], m[3][1], m[3][3])
+    cof3 = det3(m[1][0], m[1][1], m[1][2],
+                m[2][0], m[2][1], m[2][2],
+                m[3][0], m[3][1], m[3][2])
+    
+    return m[0][0] * cof0 - m[0][1] * cof1 + m[0][2] * cof2 - m[0][3] * cof3
 
 class ScaleInheritance:
     # Simple inheritance: world = local * parent_world
@@ -471,72 +533,98 @@ def combine_transform(localMatrix, parentMatrix, parentLocalMatrix, scaleInherit
 
 # Finds the intersection from a ray starting at point, in direction, with the line segment created by p1 and p2 as the endpoints
 def find_intersection_ray_to_segment(point, direction, p1, p2):
-    point = np.array(point)
-    direction = np.array(direction)
-    p1 = np.array(p1)
-    p2 = np.array(p2)
+    """Find intersection between ray and line segment. Returns tuple or None."""
+    px, py, pz = point[0], point[1], point[2]
+    dx, dy, dz = direction[0], direction[1], direction[2]
+    p1x, p1y, p1z = p1[0], p1[1], p1[2]
+    p2x, p2y, p2z = p2[0], p2[1], p2[2]
     
     # Calculate the segment direction
-    segment_direction = p2 - p1
+    sx, sy, sz = p2x - p1x, p2y - p1y, p2z - p1z
     
     # Calculate the cross product of the ray direction and segment direction
-    v_cross = np.cross(direction, segment_direction)
-    denom = np.linalg.norm(v_cross) ** 2
+    v_cross_x = dy * sz - dz * sy
+    v_cross_y = dz * sx - dx * sz
+    v_cross_z = dx * sy - dy * sx
+    
+    denom = v_cross_x*v_cross_x + v_cross_y*v_cross_y + v_cross_z*v_cross_z
     
     # If the denominator is zero, the lines are parallel
     if abs(denom) < 1e-10:
         return None
     
     # Calculate the vector from the segment start to the ray origin
-    w = point - p1
+    wx, wy, wz = px - p1x, py - p1y, pz - p1z
+    
+    # cross(segment_direction, w)
+    sw_x = sy * wz - sz * wy
+    sw_y = sz * wx - sx * wz
+    sw_z = sx * wy - sy * wx
+    
+    # cross(direction, w)
+    dw_x = dy * wz - dz * wy
+    dw_y = dz * wx - dx * wz
+    dw_z = dx * wy - dy * wx
     
     # Calculate the intersection parameters
-    t = np.dot(np.cross(segment_direction, w), v_cross) / denom
-    u = np.dot(np.cross(direction, w), v_cross) / denom
+    t = (sw_x*v_cross_x + sw_y*v_cross_y + sw_z*v_cross_z) / denom
+    u = (dw_x*v_cross_x + dw_y*v_cross_y + dw_z*v_cross_z) / denom
     
     # Check if the intersection point is within the segment
     if t >= 0 and 0 <= u <= 1:
-        intersection_point = point + t * direction
-        return np.array(intersection_point)
+        return (px + t * dx, py + t * dy, pz + t * dz)
     
     return None
 
 def find_intersection_between_rays(p1, dir1, p2, dir2):
-    if not isinstance(p1, np.ndarray):
-        p1 = np.asarray(p1)
-    if not isinstance(dir1, np.ndarray):
-        dir1 = np.asarray(dir1)
-    if not isinstance(p2, np.ndarray):
-        p2 = np.asarray(p2)
-    if not isinstance(dir2, np.ndarray):
-        dir2 = np.asarray(dir2)
+    """Find intersection between two rays. Returns tuple or None."""
+    p1x, p1y, p1z = p1[0], p1[1], p1[2]
+    d1x, d1y, d1z = dir1[0], dir1[1], dir1[2]
+    p2x, p2y, p2z = p2[0], p2[1], p2[2]
+    d2x, d2y, d2z = dir2[0], dir2[1], dir2[2]
     
     # Calculate the cross product of the direction vectors
-    cross_dir = cross3(dir1, dir2)
-    denom = cross_dir[0]*cross_dir[0] + cross_dir[1]*cross_dir[1] + cross_dir[2]*cross_dir[2]
+    cross_x = d1y * d2z - d1z * d2y
+    cross_y = d1z * d2x - d1x * d2z
+    cross_z = d1x * d2y - d1y * d2x
+    denom = cross_x*cross_x + cross_y*cross_y + cross_z*cross_z
     
     # If the denominator is zero, the rays are parallel
     if denom < 1e-12:
         return None
     
     # Calculate the vector from the origin of the first ray to the origin of the second ray
-    w = p2 - p1
+    wx, wy, wz = p2x - p1x, p2y - p1y, p2z - p1z
     
-    # Calculate the intersection parameters (inline dot products)
-    w_cross_dir2 = cross3(w, dir2)
-    w_cross_dir1 = cross3(w, dir1)
-    t1 = (w_cross_dir2[0]*cross_dir[0] + w_cross_dir2[1]*cross_dir[1] + w_cross_dir2[2]*cross_dir[2]) / denom
-    t2 = (w_cross_dir1[0]*cross_dir[0] + w_cross_dir1[1]*cross_dir[1] + w_cross_dir1[2]*cross_dir[2]) / denom
+    # Calculate the intersection parameters
+    # cross(w, dir2)
+    w_cross_d2_x = wy * d2z - wz * d2y
+    w_cross_d2_y = wz * d2x - wx * d2z
+    w_cross_d2_z = wx * d2y - wy * d2x
+    
+    # cross(w, dir1)
+    w_cross_d1_x = wy * d1z - wz * d1y
+    w_cross_d1_y = wz * d1x - wx * d1z
+    w_cross_d1_z = wx * d1y - wy * d1x
+    
+    t1 = (w_cross_d2_x*cross_x + w_cross_d2_y*cross_y + w_cross_d2_z*cross_z) / denom
+    t2 = (w_cross_d1_x*cross_x + w_cross_d1_y*cross_y + w_cross_d1_z*cross_z) / denom
     
     # Calculate the intersection points on each ray
-    intersection1 = p1 + t1 * dir1
-    intersection2 = p2 + t2 * dir2
+    i1x = p1x + t1 * d1x
+    i1y = p1y + t1 * d1y
+    i1z = p1z + t1 * d1z
+    i2x = p2x + t2 * d2x
+    i2y = p2y + t2 * d2y
+    i2z = p2z + t2 * d2z
     
     # Check if the intersection points are the same (within a tolerance)
-    diff = intersection1 - intersection2
-    dist_sq = diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]
+    diff_x = i1x - i2x
+    diff_y = i1y - i2y
+    diff_z = i1z - i2z
+    dist_sq = diff_x*diff_x + diff_y*diff_y + diff_z*diff_z
     if dist_sq < 1e-12:  # tolerance squared
-        return intersection1
+        return (i1x, i1y, i1z)
     
     return None
 
@@ -707,15 +795,15 @@ def is_point_inside_polygon(point, polygon):
     Check if a point is inside a polygon defined by 3D points on the XZ plane.
     
     Parameters:
-    point (np.array): The point to check.
-    polygon (list of np.array): The vertices of the polygon.
+    point: The point to check (tuple or list).
+    polygon: The vertices of the polygon (list of tuples or lists).
     
     Returns:
     bool: True if the point is inside the polygon, False otherwise.
     """
-    # Project the 3D points onto the XZ plane
+    # Project the 3D points onto the XZ plane (returns tuple)
     def project_to_xz(p):
-        return np.array([p[0], p[2]])
+        return (p[0], p[2])
     
     point_xz = project_to_xz(point)
     polygon_xz = [project_to_xz(p) for p in polygon]

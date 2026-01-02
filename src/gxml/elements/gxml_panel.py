@@ -2,6 +2,7 @@
     A panel is basically a quad with directionality to it.
 """
 
+import math
 from enum import IntEnum
 from typing import Optional
 from elements.gxml_base_element import GXMLLayoutElement
@@ -347,7 +348,7 @@ class GXMLPanel(GXMLLayoutElement):
         """
         ray = self.get_primary_axis_ray()
         if ray is None:
-            return np.array([1.0, 0.0, 0.0])
+            return (1.0, 0.0, 0.0)
         return ray.direction
     
     def get_secondary_axis(self):
@@ -357,9 +358,14 @@ class GXMLPanel(GXMLLayoutElement):
         """
         bottom_point = self.transform_point((0, 0, 0))
         top_point = self.transform_point((0, 1, 0))
-        axis = top_point - bottom_point
-        norm = np.linalg.norm(axis)
-        return axis / norm if norm > 0 else axis
+        ax = top_point[0] - bottom_point[0]
+        ay = top_point[1] - bottom_point[1]
+        az = top_point[2] - bottom_point[2]
+        norm = math.sqrt(ax*ax + ay*ay + az*az)
+        if norm > 0:
+            inv = 1.0 / norm
+            return (ax * inv, ay * inv, az * inv)
+        return (ax, ay, az)
     
     def get_normal_axis(self):
         """
@@ -368,9 +374,14 @@ class GXMLPanel(GXMLLayoutElement):
         """
         back_point = self.transform_point((0, 0, 0))
         front_point = self.transform_point((0, 0, 1))
-        axis = front_point - back_point
-        norm = np.linalg.norm(axis)
-        return axis / norm if norm > 0 else axis
+        ax = front_point[0] - back_point[0]
+        ay = front_point[1] - back_point[1]
+        az = front_point[2] - back_point[2]
+        norm = math.sqrt(ax*ax + ay*ay + az*az)
+        if norm > 0:
+            inv = 1.0 / norm
+            return (ax * inv, ay * inv, az * inv)
+        return (ax, ay, az)
     
     def is_valid(self, tolerance: float = 1e-4) -> bool:
         """
@@ -408,7 +419,7 @@ class GXMLPanel(GXMLLayoutElement):
             side: PanelSide enum value
             
         Returns:
-            numpy array: normalized normal vector in world space
+            tuple: normalized normal vector in world space
         """
         # Check cache first
         if side in self._face_normal_cache:
@@ -422,12 +433,20 @@ class GXMLPanel(GXMLLayoutElement):
         ]
         
         # Compute normal using cross product of two edge vectors
-        edge1 = world_points[1] - world_points[0]
-        edge2 = world_points[2] - world_points[0]
+        edge1 = (world_points[1][0] - world_points[0][0], 
+                 world_points[1][1] - world_points[0][1],
+                 world_points[1][2] - world_points[0][2])
+        edge2 = (world_points[2][0] - world_points[0][0],
+                 world_points[2][1] - world_points[0][1],
+                 world_points[2][2] - world_points[0][2])
         normal = GXMLMath.cross3(edge1, edge2)
         
-        norm = np.linalg.norm(normal)
-        result = normal / norm if norm > 0 else normal
+        norm = math.sqrt(normal[0]*normal[0] + normal[1]*normal[1] + normal[2]*normal[2])
+        if norm > 0:
+            inv = 1.0 / norm
+            result = (normal[0] * inv, normal[1] * inv, normal[2] * inv)
+        else:
+            result = normal
         
         # Cache and return
         self._face_normal_cache[side] = result
@@ -459,10 +478,16 @@ class GXMLPanel(GXMLLayoutElement):
         ]
         
         # Check if the quad is rectangular by comparing opposite edge lengths
-        edge1_len = np.linalg.norm(corners[1] - corners[0])  # bottom edge
-        edge2_len = np.linalg.norm(corners[2] - corners[1])  # right edge
-        edge3_len = np.linalg.norm(corners[3] - corners[2])  # top edge
-        edge4_len = np.linalg.norm(corners[0] - corners[3])  # left edge
+        def edge_len(p1, p2):
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            dz = p2[2] - p1[2]
+            return math.sqrt(dx*dx + dy*dy + dz*dz)
+        
+        edge1_len = edge_len(corners[0], corners[1])  # bottom edge
+        edge2_len = edge_len(corners[1], corners[2])  # right edge
+        edge3_len = edge_len(corners[2], corners[3])  # top edge
+        edge4_len = edge_len(corners[3], corners[0])  # left edge
         
         tolerance = 1e-6
         is_rectangular = (abs(edge1_len - edge3_len) < tolerance and 
@@ -473,8 +498,12 @@ class GXMLPanel(GXMLLayoutElement):
             return PanelSide.BACK
         else:
             # For non-rectangular panels, compute the quad normal
-            edge1 = corners[1] - corners[0]
-            edge2 = corners[3] - corners[0]
+            edge1 = (corners[1][0] - corners[0][0], 
+                     corners[1][1] - corners[0][1],
+                     corners[1][2] - corners[0][2])
+            edge2 = (corners[3][0] - corners[0][0],
+                     corners[3][1] - corners[0][1],
+                     corners[3][2] - corners[0][2])
             normal = GXMLMath.cross3(edge1, edge2)
             
             # Show FRONT if normal has positive Z, BACK if negative
@@ -556,17 +585,18 @@ class GXMLPanel(GXMLLayoutElement):
         Useful for determining which face is being intersected based on approach direction.
         
         Args:
-            direction: numpy array or list representing a direction in world space
+            direction: tuple, list, or array representing a direction in world space
             candidate_faces: Optional list of PanelSide values to consider.
                              If None, all faces are considered.
             
         Returns:
             PanelSide: the face whose normal is most aligned with the given direction
         """
-        direction = np.array(direction)
-        direction_norm = np.linalg.norm(direction)
+        dx, dy, dz = direction[0], direction[1], direction[2]
+        direction_norm = math.sqrt(dx*dx + dy*dy + dz*dz)
         if direction_norm > 0:
-            direction = direction / direction_norm
+            inv = 1.0 / direction_norm
+            dx, dy, dz = dx * inv, dy * inv, dz * inv
         
         best_side = None
         best_dot = -float('inf')
@@ -574,7 +604,7 @@ class GXMLPanel(GXMLLayoutElement):
         faces_to_check = candidate_faces if candidate_faces is not None else PanelSide
         for side in faces_to_check:
             face_normal = self.get_face_normal(side)
-            dot = np.dot(face_normal, direction)
+            dot = face_normal[0]*dx + face_normal[1]*dy + face_normal[2]*dz
             if dot > best_dot:
                 best_dot = dot
                 best_side = side
