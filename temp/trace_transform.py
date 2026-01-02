@@ -1,15 +1,33 @@
-"""Performance benchmark for 75-panel complex layout."""
-import time
+"""Trace where transform_point calls come from."""
 import sys
 sys.path.insert(0, '/Users/morgan/Projects/gxml/src/gxml')
 sys.path.insert(0, '/Users/morgan/Projects/gxml-web/src')
+
+# Monkey-patch to count calls by source
+call_sources = {}
+import mathutils.gxml_math as GXMLMath
+original_transform = GXMLMath.transform_point
+
+def counting_transform(point, matrix):
+    import traceback
+    stack = traceback.extract_stack()
+    # Get full call chain for analysis
+    chain = []
+    for frame in stack[-6:-2]:  # Get a few levels of context
+        chain.append(f'{frame.filename.split("/")[-1]}:{frame.lineno}')
+    key = ' -> '.join(chain)
+    call_sources[key] = call_sources.get(key, 0) + 1
+    return original_transform(point, matrix)
+
+GXMLMath.transform_point = counting_transform
 
 from gxml_parser import GXMLParser
 from gxml_layout import GXMLLayout
 from gxml_render import GXMLRender
 from gxml_web.json_render_engine import JSONRenderEngine
 
-xml_75_panels = '''<root>
+# 75 panels (from benchmark)
+xml = '''<root>
     <panel thickness="0.25"/>
     <panel width="2.55" thickness="0.25" rotate="90" attach="0:1"/>
     <panel width="2.76" thickness="0.25" rotate="-135" attach="1:1"/>
@@ -88,44 +106,14 @@ xml_75_panels = '''<root>
     <panel width="0.586" thickness="0.25" rotate="-90" attach="74:1"/>
 </root>'''
 
-def benchmark(xml, name, iterations=50):
-    """Run benchmark and return best/avg times."""
-    # Warmup
-    for _ in range(5):
-        root = GXMLParser.parse(xml)
-        GXMLLayout.layout(root)
-        render_engine = JSONRenderEngine()
-        GXMLRender.render(root, render_engine)
-    
-    # Measure
-    times = []
-    for _ in range(iterations):
-        start = time.perf_counter()
-        root = GXMLParser.parse(xml)
-        GXMLLayout.layout(root)
-        render_engine = JSONRenderEngine()
-        GXMLRender.render(root, render_engine)
-        elapsed = (time.perf_counter() - start) * 1000  # Convert to ms
-        times.append(elapsed)
-    
-    best = min(times)
-    avg = sum(times) / len(times)
-    p95 = sorted(times)[int(len(times) * 0.95)]
-    
-    return best, avg, p95
+root = GXMLParser.parse(xml)
+GXMLLayout.layout(root)
+render_engine = JSONRenderEngine()
+GXMLRender.render(root, render_engine)
 
-print("=" * 70)
-print("GXML Performance Benchmark - 75 Panel Complex Layout")
-print("=" * 70)
-print()
-
-best, avg, p95 = benchmark(xml_75_panels, "75 panels")
-print(f"75 panels: best={best:.1f}ms  avg={avg:.1f}ms  p95={p95:.1f}ms")
-print()
-print(f"Per-panel average: {avg/75:.2f}ms")
-print()
-
-# Compare scaling
-print("Scaling comparison:")
-print(f"  16 panels @ ~30ms best = 1.9ms/panel")
-print(f"  75 panels @ {best:.0f}ms best = {best/75:.1f}ms/panel")
+print('transform_point call sources (75 panels):')
+print('=' * 60)
+for k, v in sorted(call_sources.items(), key=lambda x: -x[1])[:20]:
+    print(f'  {v:6d}  {k}')
+print(f'\nTotal: {sum(call_sources.values())} calls for 75 panels')
+print(f'Per panel: {sum(call_sources.values()) / 75:.0f} calls')

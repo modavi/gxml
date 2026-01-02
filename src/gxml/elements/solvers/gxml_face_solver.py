@@ -56,16 +56,23 @@ class FaceSegment:
         (1.0, 1.0),
         (0.0, 1.0),
     ])
+    _cached_world_corners: List = field(default_factory=list, repr=False)
     
     def get_world_corners(self) -> List[np.ndarray]:
         """
-        Get world-space corners for this face segment.
+        Get world-space corners for this face segment (cached).
         
         Returns:
             List of 4 world-space corner positions
         """
-        panel = self.parent.panel
-        return [panel.get_face_point(self.face_side, t, s) for t, s in self.corners]
+        if not self._cached_world_corners:
+            panel = self.parent.panel
+            self._cached_world_corners = [panel.get_face_point(self.face_side, t, s) for t, s in self.corners]
+        return self._cached_world_corners
+    
+    def invalidate_cache(self):
+        """Clear cached world corners (call if corners change)."""
+        self._cached_world_corners = []
 
 @dataclass 
 class SegmentedPanel:
