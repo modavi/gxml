@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from .vec3 import Vec3, transform_point as vec3_transform_point, intersect_line_plane as vec3_intersect_line_plane
+from ._vec3 import lerp as _c_lerp, mat4_invert as _c_mat4_invert
 #from scipy.spatial.transform import Rotation as R
 
 # Pre-allocated identity matrix (read-only reference)
@@ -276,6 +277,8 @@ def create_transform_matrix_from_quad(points):
       p2 = top-right
       p3 = top-left (defines Y-axis)
     Maps from unit square (0,0)-(1,1) to the world space quad.
+    
+    Returns a tuple-of-tuples (4x4 matrix) for efficient use with C transform_point.
     """
     if len(points) != 4:
         raise ValueError("Must provide exactly 4 world points")
@@ -319,12 +322,13 @@ def create_transform_matrix_from_quad(points):
     
     # Build transformation matrix in row-major format for row-vector multiplication (v @ M)
     # Basis vectors are in rows, translation in bottom row
-    return np.array([
-        [xAxis[0] * xScale, xAxis[1] * xScale, xAxis[2] * xScale, 0],
-        [yAxis[0] * yScale, yAxis[1] * yScale, yAxis[2] * yScale, 0], 
-        [zAxis[0],          zAxis[1],          zAxis[2],          0],
-        [origin[0],         origin[1],         origin[2],         1]
-    ], dtype=np.float64)
+    # Return tuple-of-tuples - compatible with C transform_point and avoids numpy allocation
+    return (
+        (xAxis[0] * xScale, xAxis[1] * xScale, xAxis[2] * xScale, 0.0),
+        (yAxis[0] * yScale, yAxis[1] * yScale, yAxis[2] * yScale, 0.0), 
+        (zAxis[0],          zAxis[1],          zAxis[2],          0.0),
+        (origin[0],         origin[1],         origin[2],         1.0)
+    )
 
 def angle_between(vector1, vector2):
     dot_product = np.dot(vector1, vector2)
@@ -367,7 +371,8 @@ def mat3_to_4(mat3):
     return mat4
 
 def invert(matrix):
-    return np.linalg.inv(np.array(matrix))
+    # Use C extension for 4x4 matrix inversion - avoids numpy.array allocation
+    return _c_mat4_invert(matrix)
 
 def transpose(matrix):
     return np.array(matrix).T
@@ -747,5 +752,10 @@ def find_interpolated_point(point, p1, p2):
     return interpolation
 
 def lerp(t, a, b):
-    # Use numpy operations directly - a and b should already be numpy arrays
-    return a + t * (b - a)
+    # For 3D vectors, use C extension - much faster than numpy
+    # For scalars, use Python math
+    try:
+        return _c_lerp(t, a, b)
+    except TypeError:
+        # Fall back to scalar lerp
+        return a + t * (b - a)

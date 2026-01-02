@@ -461,6 +461,118 @@ static PyObject *vec3_cross(PyObject *self, PyObject *args) {
     );
 }
 
+/* lerp(t, a, b) - Linear interpolation between two Vec3s */
+static PyObject *vec3_lerp(PyObject *self, PyObject *args) {
+    double t;
+    PyObject *a_obj, *b_obj;
+    double ax, ay, az, bx, by, bz;
+    
+    if (!PyArg_ParseTuple(args, "dOO", &t, &a_obj, &b_obj)) return NULL;
+    if (!Vec3_extract(a_obj, &ax, &ay, &az)) return NULL;
+    if (!Vec3_extract(b_obj, &bx, &by, &bz)) return NULL;
+    
+    double one_minus_t = 1.0 - t;
+    return (PyObject *)Vec3_create(
+        one_minus_t * ax + t * bx,
+        one_minus_t * ay + t * by,
+        one_minus_t * az + t * bz
+    );
+}
+
+/* mat4_invert(matrix) - Invert a 4x4 matrix, returns flat tuple of 16 values (row-major) */
+static PyObject *vec3_mat4_invert(PyObject *self, PyObject *args) {
+    PyObject *mat_obj;
+    double m[16];  /* Input matrix */
+    double inv[16]; /* Inverted matrix */
+    
+    if (!PyArg_ParseTuple(args, "O", &mat_obj)) return NULL;
+    
+    /* Extract 4x4 matrix from nested sequence */
+    if (!PySequence_Check(mat_obj) || PySequence_Size(mat_obj) != 4) {
+        PyErr_SetString(PyExc_TypeError, "Expected 4x4 matrix (sequence of 4 sequences)");
+        return NULL;
+    }
+    
+    for (int row = 0; row < 4; row++) {
+        PyObject *row_obj = PySequence_GetItem(mat_obj, row);
+        if (!row_obj || !PySequence_Check(row_obj) || PySequence_Size(row_obj) != 4) {
+            Py_XDECREF(row_obj);
+            PyErr_SetString(PyExc_TypeError, "Expected 4x4 matrix (sequence of 4 sequences)");
+            return NULL;
+        }
+        for (int col = 0; col < 4; col++) {
+            PyObject *val = PySequence_GetItem(row_obj, col);
+            if (!val) {
+                Py_DECREF(row_obj);
+                return NULL;
+            }
+            m[row * 4 + col] = PyFloat_AsDouble(val);
+            Py_DECREF(val);
+            if (PyErr_Occurred()) {
+                Py_DECREF(row_obj);
+                return NULL;
+            }
+        }
+        Py_DECREF(row_obj);
+    }
+    
+    /* Compute 4x4 matrix inverse using cofactor expansion */
+    /* This is the standard formula - compute cofactors and divide by determinant */
+    
+    inv[0] = m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + 
+             m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+    inv[4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - 
+             m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+    inv[8] = m[4]*m[9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + 
+             m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
+    inv[12] = -m[4]*m[9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - 
+              m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
+    
+    inv[1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - 
+             m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+    inv[5] = m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + 
+             m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+    inv[9] = -m[0]*m[9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - 
+             m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
+    inv[13] = m[0]*m[9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + 
+              m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
+    
+    inv[2] = m[1]*m[6]*m[15] - m[1]*m[7]*m[14] - m[5]*m[2]*m[15] + 
+             m[5]*m[3]*m[14] + m[13]*m[2]*m[7] - m[13]*m[3]*m[6];
+    inv[6] = -m[0]*m[6]*m[15] + m[0]*m[7]*m[14] + m[4]*m[2]*m[15] - 
+             m[4]*m[3]*m[14] - m[12]*m[2]*m[7] + m[12]*m[3]*m[6];
+    inv[10] = m[0]*m[5]*m[15] - m[0]*m[7]*m[13] - m[4]*m[1]*m[15] + 
+              m[4]*m[3]*m[13] + m[12]*m[1]*m[7] - m[12]*m[3]*m[5];
+    inv[14] = -m[0]*m[5]*m[14] + m[0]*m[6]*m[13] + m[4]*m[1]*m[14] - 
+              m[4]*m[2]*m[13] - m[12]*m[1]*m[6] + m[12]*m[2]*m[5];
+    
+    inv[3] = -m[1]*m[6]*m[11] + m[1]*m[7]*m[10] + m[5]*m[2]*m[11] - 
+             m[5]*m[3]*m[10] - m[9]*m[2]*m[7] + m[9]*m[3]*m[6];
+    inv[7] = m[0]*m[6]*m[11] - m[0]*m[7]*m[10] - m[4]*m[2]*m[11] + 
+             m[4]*m[3]*m[10] + m[8]*m[2]*m[7] - m[8]*m[3]*m[6];
+    inv[11] = -m[0]*m[5]*m[11] + m[0]*m[7]*m[9] + m[4]*m[1]*m[11] - 
+              m[4]*m[3]*m[9] - m[8]*m[1]*m[7] + m[8]*m[3]*m[5];
+    inv[15] = m[0]*m[5]*m[10] - m[0]*m[6]*m[9] - m[4]*m[1]*m[10] + 
+              m[4]*m[2]*m[9] + m[8]*m[1]*m[6] - m[8]*m[2]*m[5];
+    
+    double det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+    
+    if (fabs(det) < 1e-15) {
+        PyErr_SetString(PyExc_ValueError, "Matrix is singular and cannot be inverted");
+        return NULL;
+    }
+    
+    double inv_det = 1.0 / det;
+    
+    /* Build nested tuple result (4x4 matrix as tuple of tuples) */
+    return Py_BuildValue("((dddd)(dddd)(dddd)(dddd))",
+        inv[0]*inv_det, inv[1]*inv_det, inv[2]*inv_det, inv[3]*inv_det,
+        inv[4]*inv_det, inv[5]*inv_det, inv[6]*inv_det, inv[7]*inv_det,
+        inv[8]*inv_det, inv[9]*inv_det, inv[10]*inv_det, inv[11]*inv_det,
+        inv[12]*inv_det, inv[13]*inv_det, inv[14]*inv_det, inv[15]*inv_det
+    );
+}
+
 /* Module method definitions */
 static PyMethodDef vec3_methods[] = {
     {"transform_point", vec3_transform_point, METH_VARARGS, 
@@ -477,6 +589,10 @@ static PyMethodDef vec3_methods[] = {
      "Dot product of two vectors"},
     {"cross", vec3_cross, METH_VARARGS,
      "Cross product of two vectors, returns tuple"},
+    {"lerp", vec3_lerp, METH_VARARGS,
+     "Linear interpolation: lerp(t, a, b) returns Vec3"},
+    {"mat4_invert", vec3_mat4_invert, METH_VARARGS,
+     "Invert a 4x4 matrix, returns tuple of tuples"},
     {NULL, NULL, 0, NULL}
 };
 

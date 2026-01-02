@@ -982,11 +982,16 @@ class GXMLMathCreateTransformFromQuadTests(unittest.TestCase):
             [1, 5, 3]   # p3
         ]
         
-        matrix = GXMLMath.create_transform_matrix_from_quad(world_points)
+        matrix_tuple = GXMLMath.create_transform_matrix_from_quad(world_points)
         
-        # Matrix should be 4x4
-        self.assertEqual(matrix.shape, (4, 4),
-                        "Transform matrix should be 4x4")
+        # Matrix should be 4x4 tuple-of-tuples
+        self.assertEqual(len(matrix_tuple), 4,
+                        "Transform matrix should have 4 rows")
+        self.assertTrue(all(len(row) == 4 for row in matrix_tuple),
+                        "Each row should have 4 elements")
+        
+        # Convert to numpy for remaining tests
+        matrix = np.array(matrix_tuple)
         
         # Bottom row should contain translation values [1, 2, 3, 1] for row-major format
         self.assertTrue(np.allclose(matrix[3, :], [1, 2, 3, 1]),
