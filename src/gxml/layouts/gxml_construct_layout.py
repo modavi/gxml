@@ -287,16 +287,16 @@ class GXMLConstructLayout(GXMLBaseLayout):
                 else:
                     newSize[i] = defaultSize
                 
-        return np.array(newSize)
+        return tuple(newSize)
     
     def build_local_transform(self, element, size0, size1):
         s0, s1, sMax = size0[1], size1[1], max(size0[1], size1[1])
-        sizeRatio = np.array([s0, s1]) / sMax if sMax > 0 else np.array([0, 0])
+        sizeRatio = (s0 / sMax, s1 / sMax) if sMax > 0 else (0.0, 0.0)
         size = (max(size0[0], size1[0]), max(size0[1], size1[1]), max(size0[2], size1[2]))
         
-        offsetRatioX = np.array([element.offset0[0], element.offset1[0]]) / size[0] if size[0] > 0 else np.array([0, 0])
-        offsetRatioY = np.array([element.offset0[1], element.offset1[1]]) / size[1] if size[1] > 0 else np.array([0, 0])
-        offsetRatioZ = np.array([element.offset0[2], element.offset1[2]]) / size[2] if size[2] > 0 else np.array([0, 0])
+        offsetRatioX = (element.offset0[0] / size[0], element.offset1[0] / size[0]) if size[0] > 0 else (0.0, 0.0)
+        offsetRatioY = (element.offset0[1] / size[1], element.offset1[1] / size[1]) if size[1] > 0 else (0.0, 0.0)
+        offsetRatioZ = (element.offset0[2] / size[2], element.offset1[2] / size[2]) if size[2] > 0 else (0.0, 0.0)
         
         element.quad_interpolator = QuadInterpolator((offsetRatioX[0], offsetRatioY[0], offsetRatioZ[0]), 
                                 (offsetRatioX[0] + 1, offsetRatioY[1], offsetRatioZ[0]),

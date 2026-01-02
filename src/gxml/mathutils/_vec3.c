@@ -604,6 +604,118 @@ static PyObject *vec3_find_interpolated_point(PyObject *self, PyObject *args) {
     return PyFloat_FromDouble(numer / denom);
 }
 
+/* mat4_multiply(a, b) - Multiply two 4x4 matrices, returns tuple of tuples */
+static PyObject *vec3_mat4_multiply(PyObject *self, PyObject *args) {
+    PyObject *a_obj, *b_obj;
+    double a[4][4], b[4][4], r[4][4];
+    
+    if (!PyArg_ParseTuple(args, "OO", &a_obj, &b_obj)) return NULL;
+    
+    /* Extract matrices */
+    for (int i = 0; i < 4; i++) {
+        PyObject *row_a = PySequence_GetItem(a_obj, i);
+        PyObject *row_b = PySequence_GetItem(b_obj, i);
+        if (!row_a || !row_b) {
+            Py_XDECREF(row_a);
+            Py_XDECREF(row_b);
+            return NULL;
+        }
+        for (int j = 0; j < 4; j++) {
+            PyObject *item_a = PySequence_GetItem(row_a, j);
+            PyObject *item_b = PySequence_GetItem(row_b, j);
+            if (!item_a || !item_b) {
+                Py_XDECREF(item_a);
+                Py_XDECREF(item_b);
+                Py_DECREF(row_a);
+                Py_DECREF(row_b);
+                return NULL;
+            }
+            a[i][j] = PyFloat_AsDouble(item_a);
+            b[i][j] = PyFloat_AsDouble(item_b);
+            Py_DECREF(item_a);
+            Py_DECREF(item_b);
+        }
+        Py_DECREF(row_a);
+        Py_DECREF(row_b);
+    }
+    
+    /* Matrix multiply: r = a @ b */
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            r[i][j] = a[i][0]*b[0][j] + a[i][1]*b[1][j] + a[i][2]*b[2][j] + a[i][3]*b[3][j];
+        }
+    }
+    
+    return Py_BuildValue("((dddd)(dddd)(dddd)(dddd))",
+        r[0][0], r[0][1], r[0][2], r[0][3],
+        r[1][0], r[1][1], r[1][2], r[1][3],
+        r[2][0], r[2][1], r[2][2], r[2][3],
+        r[3][0], r[3][1], r[3][2], r[3][3]);
+}
+
+/* cross_product(a, b) - Cross product of two 3D vectors, returns tuple */
+static PyObject *vec3_cross_product(PyObject *self, PyObject *args) {
+    PyObject *a_obj, *b_obj;
+    double ax, ay, az, bx, by, bz;
+    
+    if (!PyArg_ParseTuple(args, "OO", &a_obj, &b_obj)) return NULL;
+    if (!Vec3_extract(a_obj, &ax, &ay, &az)) return NULL;
+    if (!Vec3_extract(b_obj, &bx, &by, &bz)) return NULL;
+    
+    return Py_BuildValue("(ddd)", 
+        ay*bz - az*by,
+        az*bx - ax*bz,
+        ax*by - ay*bx);
+}
+
+/* is_point_on_line_segment(point, p1, p2, tol) - Check if point is on line segment */
+static PyObject *vec3_is_point_on_line_segment(PyObject *self, PyObject *args) {
+    PyObject *point_obj, *p1_obj, *p2_obj;
+    double px, py, pz, p1x, p1y, p1z, p2x, p2y, p2z;
+    double tol = 1e-6;
+    
+    if (!PyArg_ParseTuple(args, "OOO|d", &point_obj, &p1_obj, &p2_obj, &tol)) return NULL;
+    
+    if (!Vec3_extract(point_obj, &px, &py, &pz)) return NULL;
+    if (!Vec3_extract(p1_obj, &p1x, &p1y, &p1z)) return NULL;
+    if (!Vec3_extract(p2_obj, &p2x, &p2y, &p2z)) return NULL;
+    
+    /* segment_vector = p2 - p1 */
+    double sx = p2x - p1x;
+    double sy = p2y - p1y;
+    double sz = p2z - p1z;
+    
+    /* point_vector = point - p1 */
+    double vx = px - p1x;
+    double vy = py - p1y;
+    double vz = pz - p1z;
+    
+    /* Cross product to check collinearity */
+    double cx = sy*vz - sz*vy;
+    double cy = sz*vx - sx*vz;
+    double cz = sx*vy - sy*vx;
+    double cross_mag = sqrt(cx*cx + cy*cy + cz*cz);
+    
+    if (cross_mag > tol) {
+        Py_RETURN_FALSE;
+    }
+    
+    /* Check if point is within segment bounds */
+    double seg_len_sq = sx*sx + sy*sy + sz*sz;
+    if (seg_len_sq < 1e-15) {
+        /* Degenerate segment - check if point equals p1 */
+        double d = (px-p1x)*(px-p1x) + (py-p1y)*(py-p1y) + (pz-p1z)*(pz-p1z);
+        if (d < tol*tol) Py_RETURN_TRUE;
+        Py_RETURN_FALSE;
+    }
+    
+    double t = (vx*sx + vy*sy + vz*sz) / seg_len_sq;
+    if (t >= -tol && t <= 1.0 + tol) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
 /* Module method definitions */
 static PyMethodDef vec3_methods[] = {
     {"transform_point", vec3_transform_point, METH_VARARGS, 
@@ -626,6 +738,12 @@ static PyMethodDef vec3_methods[] = {
      "Invert a 4x4 matrix, returns tuple of tuples"},
     {"find_interpolated_point", vec3_find_interpolated_point, METH_VARARGS,
      "Find interpolation value of point on line segment"},
+    {"mat4_multiply", vec3_mat4_multiply, METH_VARARGS,
+     "Multiply two 4x4 matrices, returns tuple of tuples"},
+    {"cross_product", vec3_cross_product, METH_VARARGS,
+     "Cross product of two 3D vectors, returns tuple"},
+    {"is_point_on_line_segment", vec3_is_point_on_line_segment, METH_VARARGS,
+     "Check if point lies on line segment"},
     {NULL, NULL, 0, NULL}
 };
 

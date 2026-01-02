@@ -14,9 +14,27 @@
 """
 
 from typing import List, Tuple, Optional
-import numpy as np
+import math
 from elements.gxml_base_element import GXMLLayoutElement
 from gxml_types import *
+from mathutils._vec3 import cross_product as _cross, normalize as _normalize, distance as _distance
+
+
+def _vec_sub(a, b):
+    """Subtract two 3D vectors."""
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+def _vec_add(a, b):
+    """Add two 3D vectors."""
+    return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
+
+def _vec_scale(v, s):
+    """Scale a 3D vector."""
+    return (v[0] * s, v[1] * s, v[2] * s)
+
+def _vec_length(v):
+    """Length of a 3D vector."""
+    return math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
 
 
 class GXMLPolygon(GXMLLayoutElement):
@@ -31,16 +49,16 @@ class GXMLPolygon(GXMLLayoutElement):
         normal: The face normal (computed from vertices or explicitly set)
     """
     
-    def __init__(self, vertices: Optional[List[np.ndarray]] = None):
+    def __init__(self, vertices: Optional[List[tuple]] = None):
         super().__init__()
-        self._vertices: List[np.ndarray] = []
-        self._normal: Optional[np.ndarray] = None
+        self._vertices: List[tuple] = []
+        self._normal: Optional[tuple] = None
         
         if vertices:
             self.set_vertices(vertices)
     
     @property
-    def vertices(self) -> List[np.ndarray]:
+    def vertices(self) -> List[tuple]:
         """Get the polygon vertices in CCW order."""
         return self._vertices
     
@@ -50,7 +68,7 @@ class GXMLPolygon(GXMLLayoutElement):
         return len(self._vertices)
     
     @property
-    def normal(self) -> Optional[np.ndarray]:
+    def normal(self) -> Optional[tuple]:
         """Get the face normal, computed from first 3 vertices if not set."""
         if self._normal is not None:
             return self._normal
@@ -59,12 +77,14 @@ class GXMLPolygon(GXMLLayoutElement):
         return None
     
     @normal.setter
-    def normal(self, value: np.ndarray):
+    def normal(self, value):
         """Explicitly set the face normal."""
-        self._normal = np.array(value, dtype=float)
-        norm = np.linalg.norm(self._normal)
-        if norm > 1e-10:
-            self._normal /= norm
+        v = (float(value[0]), float(value[1]), float(value[2]))
+        length = _vec_length(v)
+        if length > 1e-10:
+            self._normal = _vec_scale(v, 1.0 / length)
+        else:
+            self._normal = v
     
     def set_vertices(self, vertices: List) -> 'GXMLPolygon':
         """
@@ -76,7 +96,7 @@ class GXMLPolygon(GXMLLayoutElement):
         Returns:
             Self for chaining
         """
-        self._vertices = [np.array(v, dtype=float) for v in vertices]
+        self._vertices = [tuple(float(c) for c in v) for v in vertices]
         self._normal = None  # Reset cached normal
         return self
     
@@ -90,29 +110,29 @@ class GXMLPolygon(GXMLLayoutElement):
         Returns:
             Self for chaining
         """
-        self._vertices.append(np.array(vertex, dtype=float))
+        self._vertices.append(tuple(float(c) for c in vertex))
         self._normal = None
         return self
     
-    def _compute_normal(self) -> np.ndarray:
+    def _compute_normal(self) -> tuple:
         """Compute the face normal from the first 3 vertices."""
         if len(self._vertices) < 3:
-            return np.array([0, 1, 0])  # Default up
+            return (0.0, 1.0, 0.0)  # Default up
         
         v0, v1, v2 = self._vertices[0], self._vertices[1], self._vertices[2]
-        edge1 = v1 - v0
-        edge2 = v2 - v0
-        normal = np.cross(edge1, edge2)
-        norm = np.linalg.norm(normal)
-        if norm > 1e-10:
-            return normal / norm
-        return np.array([0, 1, 0])
+        edge1 = _vec_sub(v1, v0)
+        edge2 = _vec_sub(v2, v0)
+        normal = _cross(edge1, edge2)
+        length = _vec_length(normal)
+        if length > 1e-10:
+            return _vec_scale(normal, 1.0 / length)
+        return (0.0, 1.0, 0.0)
     
     # -------------------------------------------------------------------------
     # Parametric coordinate access
     # -------------------------------------------------------------------------
     
-    def get_vertex(self, index: int) -> np.ndarray:
+    def get_vertex(self, index: int) -> tuple:
         """
         Get a vertex by index.
         
@@ -124,7 +144,7 @@ class GXMLPolygon(GXMLLayoutElement):
         """
         return self._vertices[index % len(self._vertices)]
     
-    def get_edge(self, edge_index: int) -> Tuple[np.ndarray, np.ndarray]:
+    def get_edge(self, edge_index: int) -> Tuple[tuple, tuple]:
         """
         Get the start and end points of an edge.
         
@@ -138,7 +158,7 @@ class GXMLPolygon(GXMLLayoutElement):
         return (self._vertices[edge_index % n], 
                 self._vertices[(edge_index + 1) % n])
     
-    def point_on_edge(self, edge_index: int, t: float) -> np.ndarray:
+    def point_on_edge(self, edge_index: int, t: float) -> tuple:
         """
         Get a point along an edge using parametric coordinate.
         
@@ -150,9 +170,10 @@ class GXMLPolygon(GXMLLayoutElement):
             The interpolated point
         """
         start, end = self.get_edge(edge_index)
-        return start + t * (end - start)
+        diff = _vec_sub(end, start)
+        return _vec_add(start, _vec_scale(diff, t))
     
-    def get_centroid(self) -> np.ndarray:
+    def get_centroid(self) -> tuple:
         """
         Get the centroid (average) of all vertices.
         
@@ -160,10 +181,14 @@ class GXMLPolygon(GXMLLayoutElement):
             The centroid point
         """
         if not self._vertices:
-            return np.array([0, 0, 0])
-        return np.mean(self._vertices, axis=0)
+            return (0.0, 0.0, 0.0)
+        n = len(self._vertices)
+        sx = sum(v[0] for v in self._vertices) / n
+        sy = sum(v[1] for v in self._vertices) / n
+        sz = sum(v[2] for v in self._vertices) / n
+        return (sx, sy, sz)
     
-    def point_from_barycentric(self, weights: List[float]) -> np.ndarray:
+    def point_from_barycentric(self, weights: List[float]) -> tuple:
         """
         Get a point using barycentric-style weights for each vertex.
         
@@ -180,10 +205,13 @@ class GXMLPolygon(GXMLLayoutElement):
         if abs(total) < 1e-10:
             return self.get_centroid()
         
-        result = np.zeros(3)
+        rx, ry, rz = 0.0, 0.0, 0.0
         for w, v in zip(weights, self._vertices):
-            result += (w / total) * v
-        return result
+            factor = w / total
+            rx += factor * v[0]
+            ry += factor * v[1]
+            rz += factor * v[2]
+        return (rx, ry, rz)
     
     # -------------------------------------------------------------------------
     # Geometric queries
@@ -192,11 +220,12 @@ class GXMLPolygon(GXMLLayoutElement):
     def get_edge_length(self, edge_index: int) -> float:
         """Get the length of an edge."""
         start, end = self.get_edge(edge_index)
-        return float(np.linalg.norm(end - start))
+        return _distance(start, end)
     
     def get_perimeter(self) -> float:
         """Get the total perimeter length."""
         return sum(self.get_edge_length(i) for i in range(len(self._vertices)))
+
     
     def get_area(self) -> float:
         """
@@ -212,11 +241,11 @@ class GXMLPolygon(GXMLLayoutElement):
             return 0.0
         
         # Find the dominant axis to project out
-        abs_normal = np.abs(normal)
-        if abs_normal[0] >= abs_normal[1] and abs_normal[0] >= abs_normal[2]:
+        abs_n = (abs(normal[0]), abs(normal[1]), abs(normal[2]))
+        if abs_n[0] >= abs_n[1] and abs_n[0] >= abs_n[2]:
             # Project onto YZ plane
             coords = [(v[1], v[2]) for v in self._vertices]
-        elif abs_normal[1] >= abs_normal[2]:
+        elif abs_n[1] >= abs_n[2]:
             # Project onto XZ plane
             coords = [(v[0], v[2]) for v in self._vertices]
         else:
@@ -241,7 +270,7 @@ class GXMLPolygon(GXMLLayoutElement):
         """Transform a point from local to world space."""
         return super().transform_point(point)
     
-    def get_world_vertices(self) -> List[np.ndarray]:
+    def get_world_vertices(self) -> List[tuple]:
         """Get all vertices transformed to world space."""
         return [self.transform_point(v) for v in self._vertices]
     
@@ -266,7 +295,7 @@ class GXMLPolygon(GXMLLayoutElement):
     # -------------------------------------------------------------------------
     
     @staticmethod
-    def from_points(points: List, normal: Optional[np.ndarray] = None) -> 'GXMLPolygon':
+    def from_points(points: List, normal: Optional[tuple] = None) -> 'GXMLPolygon':
         """
         Create a polygon from a list of points.
         

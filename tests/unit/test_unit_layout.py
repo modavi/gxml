@@ -362,7 +362,7 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         # Check that localTransformationMatrix is not identity
         identity = np.identity(4)
         
-        self.assertFalse(np.allclose(panel.transform.localTransformationMatrix, identity),
+        self.assertFalse(np.allclose(np.array(panel.transform.localTransformationMatrix), np.array(identity)),
                         "Local transform with rotation should not be identity matrix")
         
         # Verify rotation was applied by checking stored rotation value
@@ -372,7 +372,7 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         # Verify the local transformation matrix contains rotation components
         # For a 90-degree Y-axis rotation combined with scale (2, 2, 0.5):
         # The matrix should rotate then scale, resulting in non-diagonal values
-        local_matrix = panel.transform.localTransformationMatrix[:3, :3]
+        local_matrix = np.array(panel.transform.localTransformationMatrix)[:3, :3]
         
         # Check that off-diagonal elements exist (indicating rotation)
         off_diagonal_sum = np.sum(np.abs(local_matrix)) - np.sum(np.abs(np.diag(local_matrix)))
@@ -423,7 +423,7 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         # Zero distance should result in zero scale in X
         self.assertIsNotNone(matrix, "Span matrix should be created")
         # First column of matrix should have zero magnitude (zero X scale)
-        self.assertAlmostEqual(matrix[0, 0], 0.0, places=5,
+        self.assertAlmostEqual(matrix[0][0], 0.0, places=5,
                               msg="Zero distance should result in zero X scale")
     
     def test_calculate_span_matrix_non_zero_distance(self):
@@ -447,7 +447,8 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         # Distance from (1,0,0) to (2,0,0) is 1.0
         # Matrix should scale by distance in X and height in Y
         # First column magnitude should be approximately the distance (1.0)
-        x_scale = np.linalg.norm(matrix[:3, 0])
+        np_matrix = np.array(matrix)
+        x_scale = np.linalg.norm(np_matrix[:3, 0])
         self.assertAlmostEqual(x_scale, 1.0, places=5,
                               msg="X scale should match distance between points")
     
@@ -675,7 +676,7 @@ class ConstructLayoutUnitTests(unittest.TestCase):
         # Verify the span matrix has correct scale values
         # Distance from p1 end [2,0,0] to p3 start [4,0,0] is 2.0
         # Height should be 2.0, thickness should be 0.5
-        local_matrix = p2.transform.localTransformationMatrix
+        local_matrix = np.array(p2.transform.localTransformationMatrix)
         x_scale = np.linalg.norm(local_matrix[:3, 0])
         y_scale = np.linalg.norm(local_matrix[:3, 1])
         z_scale = np.linalg.norm(local_matrix[:3, 2])

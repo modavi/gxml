@@ -1,10 +1,21 @@
 import numpy as np
 import math
 from .vec3 import Vec3, transform_point as vec3_transform_point, intersect_line_plane as vec3_intersect_line_plane
-from ._vec3 import lerp as _c_lerp, mat4_invert as _c_mat4_invert, find_interpolated_point as _c_find_interpolated_point
+from ._vec3 import (lerp as _c_lerp, mat4_invert as _c_mat4_invert, 
+                    find_interpolated_point as _c_find_interpolated_point,
+                    mat4_multiply as _c_mat4_multiply,
+                    cross_product as _c_cross_product,
+                    is_point_on_line_segment as _c_is_point_on_line_segment)
 #from scipy.spatial.transform import Rotation as R
 
-# Pre-allocated identity matrix (read-only reference)
+# Identity matrix as tuple-of-tuples (immutable)
+_IDENTITY_4x4_TUPLE = (
+    (1.0, 0.0, 0.0, 0.0),
+    (0.0, 1.0, 0.0, 0.0),
+    (0.0, 0.0, 1.0, 0.0),
+    (0.0, 0.0, 0.0, 1.0)
+)
+# Keep numpy version for backwards compatibility where needed
 _IDENTITY_4x4 = np.eye(4, dtype=np.float64)
 _IDENTITY_4x4.flags.writeable = False
 
@@ -23,7 +34,7 @@ def unpack_args(*args):
     return x,y,z
 
 def rot_matrix(*args, rotate_order="xyz"):
-    """Compute combined rotation matrix directly without intermediate matrices."""
+    """Compute combined rotation matrix directly as tuple-of-tuples."""
     rx, ry, rz = unpack_args(*args)
     
     # Convert to radians and compute sin/cos once
@@ -36,87 +47,87 @@ def rot_matrix(*args, rotate_order="xyz"):
     cz, sz = math.cos(rz), math.sin(rz)
     
     # Build combined rotation matrix based on order
-    # For xyz order with left multiplication: Rx @ Ry @ Rz
     order = rotate_order.lower()
     
     if order == "xyz":
         # Combined xyz rotation matrix: Rx @ Ry @ Rz
-        return np.array([
-            [cy*cz, cy*sz, -sy, 0],
-            [sx*sy*cz - cx*sz, sx*sy*sz + cx*cz, sx*cy, 0],
-            [cx*sy*cz + sx*sz, cx*sy*sz - sx*cz, cx*cy, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float64)
+        return (
+            (cy*cz, cy*sz, -sy, 0.0),
+            (sx*sy*cz - cx*sz, sx*sy*sz + cx*cz, sx*cy, 0.0),
+            (cx*sy*cz + sx*sz, cx*sy*sz - sx*cz, cx*cy, 0.0),
+            (0.0, 0.0, 0.0, 1.0)
+        )
     elif order == "zyx":
         # Combined zyx rotation matrix: Rz @ Ry @ Rx
-        return np.array([
-            [cy*cz, cx*sz + sx*sy*cz, sx*sz - cx*sy*cz, 0],
-            [-cy*sz, cx*cz - sx*sy*sz, sx*cz + cx*sy*sz, 0],
-            [sy, -sx*cy, cx*cy, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float64)
+        return (
+            (cy*cz, cx*sz + sx*sy*cz, sx*sz - cx*sy*cz, 0.0),
+            (-cy*sz, cx*cz - sx*sy*sz, sx*cz + cx*sy*sz, 0.0),
+            (sy, -sx*cy, cx*cy, 0.0),
+            (0.0, 0.0, 0.0, 1.0)
+        )
     else:
-        # Fallback for other orders - build individual matrices
-        R_x = np.array([
-            [1, 0, 0, 0],
-            [0, cx, sx, 0],
-            [0, -sx, cx, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float64)
+        # Fallback for other orders - build individual matrices and multiply with C extension
+        R_x = (
+            (1.0, 0.0, 0.0, 0.0),
+            (0.0, cx, sx, 0.0),
+            (0.0, -sx, cx, 0.0),
+            (0.0, 0.0, 0.0, 1.0)
+        )
         
-        R_y = np.array([
-            [cy, 0, -sy, 0],
-            [0, 1, 0, 0],
-            [sy, 0, cy, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float64)
+        R_y = (
+            (cy, 0.0, -sy, 0.0),
+            (0.0, 1.0, 0.0, 0.0),
+            (sy, 0.0, cy, 0.0),
+            (0.0, 0.0, 0.0, 1.0)
+        )
         
-        R_z = np.array([
-            [cz, sz, 0, 0],
-            [-sz, cz, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
-        ], dtype=np.float64)
+        R_z = (
+            (cz, sz, 0.0, 0.0),
+            (-sz, cz, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.0, 1.0)
+        )
         
-        rotation_matrix = _IDENTITY_4x4.copy()
+        rotation_matrix = _IDENTITY_4x4_TUPLE
         for axis in reversed(order):
             if axis == 'x':
-                rotation_matrix = R_x @ rotation_matrix
+                rotation_matrix = _c_mat4_multiply(R_x, rotation_matrix)
             elif axis == 'y':
-                rotation_matrix = R_y @ rotation_matrix
+                rotation_matrix = _c_mat4_multiply(R_y, rotation_matrix)
             elif axis == 'z':
-                rotation_matrix = R_z @ rotation_matrix
+                rotation_matrix = _c_mat4_multiply(R_z, rotation_matrix)
         return rotation_matrix
 
 def scale_matrix(*args):
     x,y,z = unpack_args(*args)
-    return np.array([
-        [x, 0.0, 0.0, 0.0],
-        [0.0, y, 0.0, 0.0],
-        [0.0, 0.0, z, 0.0],
-        [0.0, 0.0, 0.0, 1.0]
-    ])
+    return (
+        (x, 0.0, 0.0, 0.0),
+        (0.0, y, 0.0, 0.0),
+        (0.0, 0.0, z, 0.0),
+        (0.0, 0.0, 0.0, 1.0)
+    )
 
 def translate_matrix(*args):
     x,y,z = unpack_args(*args)
-    return np.array([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [x, y, z, 1.0]
-    ])
+    return (
+        (1.0, 0.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0, 0.0),
+        (0.0, 0.0, 1.0, 0.0),
+        (x, y, z, 1.0)
+    )
     
 def explode_matrix(matrix):
-    matrix = np.array(matrix)
+    # Convert to numpy only when needed for linalg operations
+    np_matrix = np.array(matrix)
     
-    if matrix.shape != (4, 4):
+    if np_matrix.shape != (4, 4):
         raise ValueError("Input matrix must be a 4x4 matrix.")
     
     # Extract translation (from bottom row in row-major format)
-    translation = matrix[3, :3]
+    translation = np_matrix[3, :3]
     
     # Extract scale factors (from rows in row-major format)
-    scale = np.linalg.norm(matrix[:3, :3], axis=1)
+    scale = np.linalg.norm(np_matrix[:3, :3], axis=1)
     
     # Remove scale from the rotation matrix, handling zero scales
     rotation_matrix = np.zeros((3, 3))
@@ -125,7 +136,7 @@ def explode_matrix(matrix):
             # If scale is zero, use identity row
             rotation_matrix[i, i] = 1.0
         else:
-            rotation_matrix[i] = matrix[i, :3] / scale[i]
+            rotation_matrix[i] = np_matrix[i, :3] / scale[i]
     
     return translation, rotation_matrix, scale
     
@@ -194,8 +205,8 @@ def combine_transform_matrix(t,r,s, transform_order="srt"):
     return combined_matrix
     
 def identity():
-    """Return a copy of the 4x4 identity matrix."""
-    return _IDENTITY_4x4.copy()
+    """Return the 4x4 identity matrix as tuple-of-tuples."""
+    return _IDENTITY_4x4_TUPLE
 
 # Use optimized transform_point from vec3 module (C extension if available)
 transform_point = vec3_transform_point
@@ -204,7 +215,13 @@ transform_point = vec3_transform_point
 # while ensuring its length stays unmodified.    
 def transform_direction(vector, matrix):
     t,r,s = explode_matrix(matrix)
-    return mat_mul(np.array(vector), r)
+    # r is a 3x3 rotation matrix, vector @ r
+    vx, vy, vz = vector[0], vector[1], vector[2]
+    return (
+        vx * r[0, 0] + vy * r[1, 0] + vz * r[2, 0],
+        vx * r[0, 1] + vy * r[1, 1] + vz * r[2, 1],
+        vx * r[0, 2] + vy * r[1, 2] + vz * r[2, 2]
+    )
 
 def distance(p1, p2):
     """Distance between two points. Works with tuples, lists, or arrays."""
@@ -363,19 +380,27 @@ def get_plane_rotation_from_axis(xAxis, yAxis, zAxis):
     return mat3_to_4(rotation_3x3)
     
 def mat_mul(matrix1, matrix2):
-    return np.dot(matrix1, matrix2)
+    # Use C extension for matrix multiplication
+    return _c_mat4_multiply(matrix1, matrix2)
 
 def mat3_to_4(mat3):
-    mat4 = identity()
-    mat4[:3, :3] = mat3
-    return mat4
+    # Convert 3x3 to 4x4 - returns tuple-of-tuples
+    return (
+        (mat3[0][0], mat3[0][1], mat3[0][2], 0.0),
+        (mat3[1][0], mat3[1][1], mat3[1][2], 0.0),
+        (mat3[2][0], mat3[2][1], mat3[2][2], 0.0),
+        (0.0, 0.0, 0.0, 1.0)
+    )
 
 def invert(matrix):
     # Use C extension for 4x4 matrix inversion - avoids numpy.array allocation
     return _c_mat4_invert(matrix)
 
 def transpose(matrix):
-    return np.array(matrix).T
+    # Transpose a matrix - returns tuple-of-tuples
+    n = len(matrix)
+    m = len(matrix[0])
+    return tuple(tuple(matrix[j][i] for j in range(n)) for i in range(m))
 
 def determinant(matrix):
     return np.linalg.det(matrix)
@@ -404,10 +429,10 @@ def combine_transform(localMatrix, parentMatrix, parentLocalMatrix, scaleInherit
     # For Ignore with identity scale, simplify to Default behavior
     if scaleInheritance == ScaleInheritance.Ignore:
         # Quick check: if parentLocalMatrix is identity-like for scale (diagonal is 1s)
-        # We can check the 3x3 upper-left portion
-        if (abs(parentLocalMatrix[0, 0] - 1.0) < 1e-10 and 
-            abs(parentLocalMatrix[1, 1] - 1.0) < 1e-10 and 
-            abs(parentLocalMatrix[2, 2] - 1.0) < 1e-10):
+        # We can check the 3x3 upper-left portion using [row][col] tuple indexing
+        if (abs(parentLocalMatrix[0][0] - 1.0) < 1e-10 and 
+            abs(parentLocalMatrix[1][1] - 1.0) < 1e-10 and 
+            abs(parentLocalMatrix[2][2] - 1.0) < 1e-10):
             # Parent has unit scale, so invert(parent_local_scales) is identity
             return mat_mul(localMatrix, parentMatrix)
     
@@ -583,30 +608,12 @@ def find_intersection_between_segments(p1, p2, p3, p4, tol=1e-6):
     # Check if the intersection points are the same (within tolerance)
     dx, dy, dz = ix1 - ix2, iy1 - iy2, iz1 - iz2
     if dx * dx + dy * dy + dz * dz < tol_sq:
-        return np.array([ix1, iy1, iz1])
+        return (ix1, iy1, iz1)
     
     return None
 
 def is_point_on_line_segment(point, p1, p2, tol=1e-6):
-    point = np.array(point)
-    p1 = np.array(p1)
-    p2 = np.array(p2)
-    
-    # Calculate the vectors
-    segment_vector = p2 - p1
-    point_vector = point - p1
-    
-    # Check if the point is on the line defined by the segment
-    cross_product = np.cross(segment_vector, point_vector)
-    if np.linalg.norm(cross_product) > tol:
-        return False
-    
-    # Check if the point is within the bounds of the segment
-    dot_product = np.dot(point_vector, segment_vector)
-    if dot_product < 0 or dot_product > np.dot(segment_vector, segment_vector):
-        return False
-    
-    return True
+    return _c_is_point_on_line_segment(point, p1, p2, tol)
 
 # Use optimized version from vec3 module (C extension if available)
 intersect_line_with_plane = vec3_intersect_line_plane

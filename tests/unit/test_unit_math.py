@@ -278,7 +278,7 @@ class GXMLMathMatrixTests(unittest.TestCase):
         p1 = np.array([1, 0, 0])
         p2 = np.array([1, 1, 0])
         
-        rotation_matrix = GXMLMath.get_plane_rotation_from_triangle(p0, p1, p2)
+        rotation_matrix = np.array(GXMLMath.get_plane_rotation_from_triangle(p0, p1, p2))
         
         # The X axis should point from p1 to p2 (0, 1, 0)
         x_axis = rotation_matrix[:3, 0]

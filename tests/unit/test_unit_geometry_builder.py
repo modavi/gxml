@@ -1164,8 +1164,8 @@ class JointCapTests(unittest.TestCase):
         
         # Calculate normal for top cap using cross product of first two edges
         v0, v1, v2 = top_cap.vertices[0], top_cap.vertices[1], top_cap.vertices[2]
-        edge1 = v1 - v0
-        edge2 = v2 - v0
+        edge1 = np.array(v1) - np.array(v0)
+        edge2 = np.array(v2) - np.array(v0)
         top_normal = np.cross(edge1, edge2)
         top_normal = top_normal / np.linalg.norm(top_normal)
         
@@ -1175,8 +1175,8 @@ class JointCapTests(unittest.TestCase):
         
         # Calculate normal for bottom cap
         v0, v1, v2 = bottom_cap.vertices[0], bottom_cap.vertices[1], bottom_cap.vertices[2]
-        edge1 = v1 - v0
-        edge2 = v2 - v0
+        edge1 = np.array(v1) - np.array(v0)
+        edge2 = np.array(v2) - np.array(v0)
         bottom_normal = np.cross(edge1, edge2)
         bottom_normal = bottom_normal / np.linalg.norm(bottom_normal)
         
