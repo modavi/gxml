@@ -27,6 +27,13 @@ from .gxml_geometry_builder import (
     GeometryBuilder,
 )
 
+from .gxml_gpu_geometry_builder import (
+    GPUGeometryBuilder,
+    set_geometry_backend,
+    get_geometry_backend,
+    get_geometry_builder,
+)
+
 __all__ = [
     # Stage 1: Intersection Solving
     'IntersectionSolver',
@@ -41,4 +48,8 @@ __all__ = [
     'FaceSegment',
     # Stage 3: Geometry Building
     'GeometryBuilder',
+    'GPUGeometryBuilder',
+    'set_geometry_backend',
+    'get_geometry_backend',
+    'get_geometry_builder',
 ]
