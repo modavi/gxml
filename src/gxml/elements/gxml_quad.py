@@ -26,6 +26,7 @@ class GXMLQuad(GXMLPolygon):
     def __init__(self):
         super().__init__()
         self._interpolator: Optional[QuadInterpolator] = None
+        self._cached_world_vertices: Optional[List] = None
     
     def transform_point(self, point):
         """
@@ -50,14 +51,16 @@ class GXMLQuad(GXMLPolygon):
     
     def get_world_vertices(self) -> List[np.ndarray]:
         """
-        Get the 4 corner vertices in world space.
+        Get the 4 corner vertices in world space (cached).
         
         Returns:
             List of 4 world-space vertex positions
         """
-        # Transform unit quad corners through our transform
-        local_corners = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
-        return [self.transform_point(c) for c in local_corners]
+        if self._cached_world_vertices is None:
+            # Transform unit quad corners through our transform
+            local_corners = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+            self._cached_world_vertices = [self.transform_point(c) for c in local_corners]
+        return self._cached_world_vertices
     
     def render(self, renderContext):
         """Render the quad as a 4-vertex polygon."""

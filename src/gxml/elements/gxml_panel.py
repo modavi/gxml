@@ -271,6 +271,8 @@ class GXMLPanel(GXMLLayoutElement):
         quad._interpolator = QuadInterpolator(localQuadPoints[0], localQuadPoints[1], 
                               localQuadPoints[2], localQuadPoints[3])
         quad.transform.transformationMatrix = matrix
+        # Cache the world points we already computed to avoid recomputing in render()
+        quad._cached_world_vertices = worldPoints
         
         pop_perf_marker()
         return quad
