@@ -620,16 +620,29 @@ def intersect_lines_2d(line1, line2, plane='xz', tol=1e-9):
         tol: Tolerance for parallel line detection (default 1e-9)
         
     Returns:
-        3D intersection point, or None if lines are parallel
+        3D intersection point as tuple, or None if lines are parallel
     """
     p1, p2 = line1
     p3, p4 = line2
     
-    # Map plane name to the axis to ignore
-    plane_map = {'yz': 0, 'xz': 1, 'xy': 2}
-    ignore_idx = plane_map.get(plane.lower(), 1)
+    # Inline plane mapping and axis selection for xz (common case)
+    if plane == 'xz':
+        a1, b1 = p1[0], p1[2]
+        a2, b2 = p2[0], p2[2]
+        a3, b3 = p3[0], p3[2]
+        a4, b4 = p4[0], p4[2]
+        ignore_val = p1[1]
+        
+        denom = (a1 - a2) * (b3 - b4) - (b1 - b2) * (a3 - a4)
+        if abs(denom) < tol:
+            return None
+        
+        t = ((a1 - a3) * (b3 - b4) - (b1 - b3) * (a3 - a4)) / denom
+        return (a1 + t * (a2 - a1), ignore_val, b1 + t * (b2 - b1))
     
-    # Get the two axes we're using for 2D intersection
+    # General case for other planes
+    plane_map = {'yz': 0, 'xy': 2}
+    ignore_idx = plane_map.get(plane.lower(), 1)
     axes = [i for i in range(3) if i != ignore_idx]
     a, b = axes[0], axes[1]
     
@@ -640,17 +653,19 @@ def intersect_lines_2d(line1, line2, plane='xz', tol=1e-9):
     
     denom = (a1 - a2) * (b3 - b4) - (b1 - b2) * (a3 - a4)
     if abs(denom) < tol:
-        return None  # Lines are parallel
+        return None
     
     t = ((a1 - a3) * (b3 - b4) - (b1 - b3) * (a3 - a4)) / denom
     
-    # Build result point
-    result = np.zeros(3)
-    result[a] = a1 + t * (a2 - a1)
-    result[b] = b1 + t * (b2 - b1)
-    result[ignore_idx] = p1[ignore_idx]
-    
-    return result
+    # Build result as tuple (faster than numpy array)
+    ra = a1 + t * (a2 - a1)
+    rb = b1 + t * (b2 - b1)
+    if ignore_idx == 0:
+        return (p1[0], ra, rb)
+    elif ignore_idx == 2:
+        return (ra, rb, p1[2])
+    else:
+        return (ra, p1[1], rb)
 
 
 def project_point_onto_plane(point, plane_point, plane_normal):

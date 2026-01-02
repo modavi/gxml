@@ -13,6 +13,7 @@ class GXMLTransform:
         
         self.localTransformationMatrix = GXMLMath.identity()
         self.transformationMatrix = GXMLMath.identity()
+        self._inverse_matrix = None  # Cached inverse, invalidated on recalculate
         
         # We also store these components individually in the case of needing to know the original
         # values for translation and rotation when a 0 scale has been applied in any axis
@@ -48,13 +49,14 @@ class GXMLTransform:
         return self.transform_direction((0.0, 0.0, -1.0))
     
     def sceneToLocal(self, point):
-        det = GXMLMath.determinant(self.transformationMatrix)
-        if abs(det) < 1e-10:
-            return [0,0,0]
+        # Use cached inverse matrix
+        if self._inverse_matrix is None:
+            det = GXMLMath.determinant(self.transformationMatrix)
+            if abs(det) < 1e-10:
+                return [0,0,0]
+            self._inverse_matrix = GXMLMath.invert(self.transformationMatrix)
         
-        inv = GXMLMath.invert(self.transformationMatrix)
-        local_point = GXMLMath.transform_point(point, inv)
-        # Already in 0-1 space, just return as list
+        local_point = GXMLMath.transform_point(point, self._inverse_matrix)
         return [local_point[0], local_point[1], local_point[2]]
 
     def transform_point(self, point):
@@ -64,6 +66,9 @@ class GXMLTransform:
         return GXMLMath.transform_direction(vec, self.transformationMatrix)
     
     def recalculate(self, parentTransform):
+        # Invalidate cached inverse since matrix is changing
+        self._inverse_matrix = None
+        
         localMatrix = GXMLMath.mat_mul(GXMLMath.translate_matrix(tuple(-x for x in self.pivot)), self.localTransformationMatrix)
                 
         if(parentTransform):

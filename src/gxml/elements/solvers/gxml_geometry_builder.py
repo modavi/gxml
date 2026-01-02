@@ -407,14 +407,14 @@ class GeometryBuilder:
         if any(v is None for v in [v1, v2, v3, v4]):
             return None
         
-        # Sort vertices in CCW order around their centroid
+        # Sort vertices in CCW order around their centroid (pure Python, no numpy)
         cap_vertices = [v1, v2, v3, v4]
-        centroid = np.mean(cap_vertices, axis=0)
+        cx = (v1[0] + v2[0] + v3[0] + v4[0]) * 0.25
+        cz = (v1[2] + v2[2] + v3[2] + v4[2]) * 0.25
         
-        def angle_from_centroid(v: np.ndarray) -> float:
-            dx = v[0] - centroid[0]
-            dz = v[2] - centroid[2]
-            return -np.arctan2(dz, dx)
+        import math
+        def angle_from_centroid(v):
+            return -math.atan2(v[2] - cz, v[0] - cx)
         
         cap_vertices.sort(key=angle_from_centroid)
         
