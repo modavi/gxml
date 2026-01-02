@@ -8,7 +8,6 @@ For volumetric shapes, see GXMLPanel (extruded quad).
 """
 
 from typing import List, Tuple, Optional
-import numpy as np
 from elements.gxml_polygon import GXMLPolygon
 from mathutils.quad_interpolator import QuadInterpolator
 import mathutils.gxml_math as GXMLMath
@@ -49,12 +48,12 @@ class GXMLQuad(GXMLPolygon):
             # Fall back to standard transform
             return super().transform_point(point)
     
-    def get_world_vertices(self) -> List[np.ndarray]:
+    def get_world_vertices(self) -> List[tuple]:
         """
         Get the 4 corner vertices in world space (cached).
         
         Returns:
-            List of 4 world-space vertex positions
+            List of 4 world-space vertex positions as (x, y, z) tuples
         """
         if self._cached_world_vertices is None:
             # Transform unit quad corners through our transform

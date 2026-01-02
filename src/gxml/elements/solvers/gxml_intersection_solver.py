@@ -64,10 +64,9 @@ For integration with the panel system, see GXMLPanel.py.
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 import math
-import numpy as np
 from enum import Enum
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict
@@ -231,7 +230,7 @@ class Intersection:
             return None
     
     type: IntersectionType
-    position: np.ndarray
+    position: tuple  # (x, y, z) world position
     panels: List[PanelEntry]
     _panel_lookup: dict = None  # Cached lookup dict, built on first access
     
@@ -283,7 +282,7 @@ class Intersection:
 # INTERSECTION DISCOVERY AND SOLVING
 # ============================================================================
 
-def _spatial_hash(position: np.ndarray) -> Tuple[float, float, float]:
+def _spatial_hash(position: Sequence) -> Tuple[float, float, float]:
     """Create a spatial hash key for a 3D position for grouping nearby points"""
     return (round(position[0], SPATIAL_HASH_PRECISION),
             round(position[1], SPATIAL_HASH_PRECISION),
@@ -379,7 +378,7 @@ class IntersectionSolver:
     @staticmethod
     def _compute_secondary_splits(panel: GXMLPanel, 
                                   t_value: float,
-                                  intersection_position: np.ndarray,
+                                  intersection_position: Sequence,
                                   intersecting_panels: List[GXMLPanel]) -> Optional[Region]:
         """
         Compute secondary axis (s-axis/height) splits for a panel at an intersection.
@@ -452,7 +451,7 @@ class IntersectionSolver:
     @staticmethod
     def _generate_regions(panel_t_values: Dict[GXMLPanel, float],
                          sorted_panels: List[GXMLPanel],
-                         intersection_position: np.ndarray,
+                         intersection_position: Sequence,
                          intersection: 'Intersection') -> Dict[GXMLPanel, Optional[Region]]:
         """
         Generate BSP region structures for panels that need splitting.

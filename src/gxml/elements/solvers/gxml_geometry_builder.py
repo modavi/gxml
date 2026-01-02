@@ -11,9 +11,7 @@ Key responsibilities:
 - Create joint caps and crossing caps
 """
 
-from typing import Optional, List
-
-import numpy as np
+from typing import Optional, List, Sequence
 
 from elements.solvers.gxml_intersection_solver import IntersectionSolution, IntersectionType, Intersection
 from elements.solvers.gxml_face_solver import FaceSolver, JointSide, SegmentedPanel
@@ -374,7 +372,7 @@ class GeometryBuilder:
     
     @staticmethod
     def _compute_crossing_cap_vertices(pf1: SegmentedPanel, pf2: SegmentedPanel,
-                                        is_top: bool) -> Optional[List[np.ndarray]]:
+                                        is_top: bool) -> Optional[List[tuple]]:
         """
         Compute crossing cap vertices from panel faces.
         
@@ -387,7 +385,7 @@ class GeometryBuilder:
             is_top: True for TOP cap, False for BOTTOM cap
             
         Returns:
-            List of 4 corner vertices in CCW winding order, or None
+            List of 4 corner vertices as (x,y,z) tuples in CCW winding order, or None
         """
         # Get gap edges for both panels' FRONT and BACK faces
         p1_front = _get_crossing_gap_edge(pf1, PanelSide.FRONT, is_top)

@@ -11,7 +11,6 @@ from gxml_profile import *
 from mathutils.quad_interpolator import QuadInterpolator, batch_bilinear_transform
 from mathutils.gxml_ray import GXMLRay
 import mathutils.gxml_math as GXMLMath
-import numpy as np
 from elements.gxml_quad import GXMLQuad
 
 
@@ -307,7 +306,7 @@ class GXMLPanel(GXMLLayoutElement):
         else:
             raise ValueError(f"Invalid panel side: {side}")
     
-    def get_face_point(self, face_side: 'PanelSide', t: float, s: float) -> np.ndarray:
+    def get_face_point(self, face_side: 'PanelSide', t: float, s: float) -> tuple:
         """
         Map (t, s) coordinates to a world-space point on a face.
         
@@ -317,7 +316,7 @@ class GXMLPanel(GXMLLayoutElement):
             s: Position along secondary axis (0 to 1)
             
         Returns:
-            World-space point on the face
+            World-space point on the face as (x, y, z) tuple
         """
         half_thickness = self.thickness / 2
         
@@ -543,7 +542,7 @@ class GXMLPanel(GXMLLayoutElement):
             return (0.5, 0.5, 0.0)
         return (factors[0], factors[1], factors[2] * self.thickness / 2)
     
-    def get_face_center_world(self, face: PanelSide) -> np.ndarray:
+    def get_face_center_world(self, face: PanelSide) -> tuple:
         """
         Get the world-space center point of a face (cached).
         
@@ -551,7 +550,7 @@ class GXMLPanel(GXMLLayoutElement):
             face: Which face (PanelSide enum)
             
         Returns:
-            numpy array: world-space position of face center
+            tuple: (x, y, z) world-space position of face center
         """
         if face in self._face_point_cache:
             return self._face_point_cache[face]

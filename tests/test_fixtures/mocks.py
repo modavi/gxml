@@ -163,18 +163,20 @@ class GXMLMockPanel(GXMLPanel):
             self.quad_interpolator = QuadInterpolator(p0, p1, p2, p3)
             
             # Calculate world space transformation
-            import numpy as np
-            direction = np.array(end_pos) - np.array(start_pos)
-            length = np.linalg.norm(direction)
+            import math
+            dx = end_pos[0] - start_pos[0]
+            dy = end_pos[1] - start_pos[1]
+            dz = end_pos[2] - start_pos[2]
+            length = math.sqrt(dx*dx + dy*dy + dz*dz)
             
             if length > 1e-10:  # Avoid division by zero
-                direction = direction / length
+                direction = (dx / length, dy / length, dz / length)
                 
                 # Calculate rotation: align local X-axis with direction vector
                 # In Y-up right-handed system, Y-rotation transforms [1,0,0] -> [cos(theta),0,-sin(theta)]
                 # To align with direction [dx, 0, dz], we need: cos(theta)=dx, -sin(theta)=dz
                 # Therefore: theta = atan2(-dz, dx)
-                angle_y = np.degrees(np.arctan2(-direction[2], direction[0]))
+                angle_y = math.degrees(math.atan2(-direction[2], direction[0]))
                 
                 # For now, only support horizontal panels (Y component of direction = 0)
                 # Full 3D rotation would require calculating pitch and roll as well

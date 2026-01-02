@@ -4,7 +4,6 @@
 
 import mathutils.gxml_math as GXMLMath
 from mathutils.gxml_transform import GXMLTransform
-import numpy as np
 
 class GXMLLayoutScheme:
     Construct = "construct"

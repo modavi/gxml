@@ -1,5 +1,3 @@
-import numpy as np
-
 # Import C extension functions if available  
 try:
     from . import _vec3

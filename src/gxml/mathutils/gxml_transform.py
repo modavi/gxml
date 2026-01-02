@@ -2,7 +2,6 @@
 GXMLTransform - Transformation matrix handling for GXML elements.
 """
 
-import numpy as np
 import mathutils.gxml_math as GXMLMath
 
 

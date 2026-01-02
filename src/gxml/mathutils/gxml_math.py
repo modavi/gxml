@@ -1,4 +1,3 @@
-import numpy as np
 import math
 from .vec3 import Vec3, transform_point as vec3_transform_point, intersect_line_plane as vec3_intersect_line_plane
 from ._vec3 import (lerp as _c_lerp, mat4_invert as _c_mat4_invert, 

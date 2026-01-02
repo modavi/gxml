@@ -17,9 +17,7 @@ Key data structures:
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from functools import lru_cache
-from typing import Tuple, Optional, List, Dict
-
-import numpy as np
+from typing import Tuple, Optional, List, Dict, Sequence
 
 import mathutils.gxml_math as GXMLMath
 from .gxml_intersection_solver import IntersectionSolution, Intersection, IntersectionType, Region
@@ -59,12 +57,12 @@ class FaceSegment:
     ])
     _cached_world_corners: List = field(default_factory=list, repr=False)
     
-    def get_world_corners(self) -> List[np.ndarray]:
+    def get_world_corners(self) -> List[tuple]:
         """
         Get world-space corners for this face segment (cached).
         
         Returns:
-            List of 4 world-space corner positions
+            List of 4 world-space corner positions as (x, y, z) tuples
         """
         if not self._cached_world_corners:
             panel = self.parent.panel
@@ -805,8 +803,8 @@ class FaceSolver:
         return None
 
     @staticmethod
-    def _intersect_line_with_panel_face(line_start: np.ndarray, line_direction: np.ndarray,
-                                         panel: GXMLPanel, face: PanelSide) -> Optional[np.ndarray]:
+    def _intersect_line_with_panel_face(line_start: Sequence, line_direction: Sequence,
+                                         panel: GXMLPanel, face: PanelSide) -> Optional[tuple]:
         """
         Intersect a line with a panel face plane.
         

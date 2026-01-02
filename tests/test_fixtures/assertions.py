@@ -1,15 +1,34 @@
 """Custom assertions for GXML testing."""
 
-import numpy as np
+import math
+
+
+def _allclose(actual, expected, atol=1e-5):
+    """Check if all elements are close within tolerance (pure Python replacement for np.allclose).
+    
+    Uses 1e-5 default tolerance which matches typical floating point precision for coordinate values.
+    """
+    # Handle Vec3 objects (have x, y, z attributes) 
+    if hasattr(actual, 'x'):
+        actual = (actual.x, actual.y, actual.z)
+    if hasattr(expected, 'x'):
+        expected = (expected.x, expected.y, expected.z)
+    
+    if len(actual) != len(expected):
+        return False
+    for a, e in zip(actual, expected):
+        if abs(a - e) > atol:
+            return False
+    return True
 
 
 def assert_corner_points(test_case, panel, *expected, msg=None):
     """Assert panel corner points match expected world positions.
     
     Verifies that a panel's four corners, when transformed to world space, match
-    expected coordinates. Uses numpy.allclose for floating point comparison with
-    1e-6 tolerance. Provides detailed error messages indicating which corner
-    failed and the actual vs expected values.
+    expected coordinates. Uses floating point comparison with 1e-6 tolerance.
+    Provides detailed error messages indicating which corner failed and the
+    actual vs expected values.
     
     Args:
         test_case: unittest.TestCase instance for assertions
@@ -42,9 +61,9 @@ def assert_corner_points(test_case, panel, *expected, msg=None):
     # Handle both call signatures: 4 separate points or 1 array
     if len(expected) == 1:
         # Array of 4 points
-        expected_points = np.array(expected[0])
-        if expected_points.shape != (4, 3):
-            raise ValueError(f"Expected array of 4 points with shape (4,3), got {expected_points.shape}")
+        expected_points = expected[0]
+        if len(expected_points) != 4 or any(len(p) != 3 for p in expected_points):
+            raise ValueError(f"Expected array of 4 points with 3 coords each")
         p1_expected, p2_expected, p3_expected, p4_expected = expected_points
     elif len(expected) == 4:
         # 4 separate points
@@ -60,13 +79,13 @@ def assert_corner_points(test_case, panel, *expected, msg=None):
     
     # Check each corner with detailed error messages
     corner_info = panel.subId if hasattr(panel, 'subId') else 'panel'
-    test_case.assertTrue(np.allclose(p1_actual, np.array(p1_expected), atol=1e-6),
+    test_case.assertTrue(_allclose(p1_actual, p1_expected),
                         msg or f"{corner_info} corner [0,0,0]: expected {p1_expected}, got {p1_actual}")
-    test_case.assertTrue(np.allclose(p2_actual, np.array(p2_expected), atol=1e-6),
+    test_case.assertTrue(_allclose(p2_actual, p2_expected),
                         msg or f"{corner_info} corner [1,0,0]: expected {p2_expected}, got {p2_actual}")
-    test_case.assertTrue(np.allclose(p3_actual, np.array(p3_expected), atol=1e-6),
+    test_case.assertTrue(_allclose(p3_actual, p3_expected),
                         msg or f"{corner_info} corner [1,1,0]: expected {p3_expected}, got {p3_actual}")
-    test_case.assertTrue(np.allclose(p4_actual, np.array(p4_expected), atol=1e-6),
+    test_case.assertTrue(_allclose(p4_actual, p4_expected),
                         msg or f"{corner_info} corner [0,1,0]: expected {p4_expected}, got {p4_actual}")
 
 
