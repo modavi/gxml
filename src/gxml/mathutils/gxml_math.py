@@ -1,16 +1,26 @@
 import math
 from .vec3 import Vec3, transform_point as vec3_transform_point, intersect_line_plane as vec3_intersect_line_plane
-from ._vec3 import (lerp as _c_lerp, mat4_invert as _c_mat4_invert, 
-                    find_interpolated_point as _c_find_interpolated_point,
-                    mat4_multiply as _c_mat4_multiply,
-                    cross_product as _c_cross_product,
-                    is_point_on_line_segment as _c_is_point_on_line_segment,
-                    batch_transform_points as _c_batch_transform_points,
-                    dot as _c_dot,
-                    normalize as _c_normalize,
-                    distance as _c_distance,
-                    length as _c_length,
-                    project_point_on_ray as _c_project_point_on_ray)
+
+# Try to import C extension functions, fall back to None if unavailable
+try:
+    from ._vec3 import (lerp as _c_lerp, mat4_invert as _c_mat4_invert, 
+                        find_interpolated_point as _c_find_interpolated_point,
+                        mat4_multiply as _c_mat4_multiply,
+                        cross_product as _c_cross_product,
+                        is_point_on_line_segment as _c_is_point_on_line_segment,
+                        batch_transform_points as _c_batch_transform_points,
+                        dot as _c_dot,
+                        normalize as _c_normalize,
+                        distance as _c_distance,
+                        length as _c_length,
+                        project_point_on_ray as _c_project_point_on_ray)
+    _HAS_C_EXTENSION = True
+except ImportError:
+    _HAS_C_EXTENSION = False
+    _c_lerp = _c_mat4_invert = _c_find_interpolated_point = None
+    _c_mat4_multiply = _c_cross_product = _c_is_point_on_line_segment = None
+    _c_batch_transform_points = _c_dot = _c_normalize = None
+    _c_distance = _c_length = _c_project_point_on_ray = None
 #from scipy.spatial.transform import Rotation as R
 
 # Identity matrix as tuple-of-tuples (immutable)
@@ -246,12 +256,19 @@ def transform_direction(vector, matrix):
     )
 
 def distance(p1, p2):
-    """Distance between two points. Uses C extension."""
-    return _c_distance(p1, p2)
+    """Distance between two points. Uses C extension if available."""
+    if _c_distance:
+        return _c_distance(p1, p2)
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    dz = p2[2] - p1[2]
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
 
 def length(vector):
-    """Length of a vector. Uses C extension."""
-    return _c_length(vector)
+    """Length of a vector. Uses C extension if available."""
+    if _c_length:
+        return _c_length(vector)
+    return math.sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2])
 
 def sub3(a, b):
     """Subtract two 3D vectors. Returns tuple."""
@@ -270,12 +287,20 @@ def neg3(v):
     return (-v[0], -v[1], -v[2])
 
 def dot3(a, b):
-    """Dot product of two 3D vectors. Uses C extension."""
-    return _c_dot(a, b)
+    """Dot product of two 3D vectors. Uses C extension if available."""
+    if _c_dot:
+        return _c_dot(a, b)
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
 def normalize(vector):
-    """Normalize a vector. Returns tuple. Uses C extension."""
-    return _c_normalize(vector)
+    """Normalize a vector. Returns tuple. Uses C extension if available."""
+    if _c_normalize:
+        return _c_normalize(vector)
+    mag = math.sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2])
+    if mag < 1e-10:
+        raise ValueError("Cannot normalize a zero vector")
+    inv_mag = 1.0 / mag
+    return (vector[0] * inv_mag, vector[1] * inv_mag, vector[2] * inv_mag)
 
 def safe_normalize(vector):
     """Normalize a vector, returning zero vector if input is zero. Returns tuple."""
@@ -298,8 +323,8 @@ def cross3(a, b):
     )
 
 def dot_product(vector1, vector2):
-    """Dot product - works with any indexable type."""
-    return vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector2[2]
+    """Dot product - alias for dot3."""
+    return dot3(vector1, vector2)
 
 def create_transform_matrix_from_quad(points):
     """
