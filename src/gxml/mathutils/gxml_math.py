@@ -13,14 +13,18 @@ try:
                         normalize as _c_normalize,
                         distance as _c_distance,
                         length as _c_length,
-                        project_point_on_ray as _c_project_point_on_ray)
+                        project_point_on_ray as _c_project_point_on_ray,
+                        Mat4)
     _HAS_C_EXTENSION = True
+    _HAS_MAT4 = True
 except ImportError:
     _HAS_C_EXTENSION = False
+    _HAS_MAT4 = False
     _c_lerp = _c_mat4_invert = _c_find_interpolated_point = None
     _c_mat4_multiply = _c_cross_product = _c_is_point_on_line_segment = None
     _c_batch_transform_points = _c_dot = _c_normalize = None
     _c_distance = _c_length = _c_project_point_on_ray = None
+    Mat4 = None
 #from scipy.spatial.transform import Rotation as R
 
 # Identity matrix as tuple-of-tuples (immutable)
@@ -30,6 +34,9 @@ _IDENTITY_4x4_TUPLE = (
     (0.0, 0.0, 1.0, 0.0),
     (0.0, 0.0, 0.0, 1.0)
 )
+
+# Pre-create identity Mat4 if available (avoids repeated allocation)
+_IDENTITY_MAT4 = Mat4(_IDENTITY_4x4_TUPLE) if _HAS_MAT4 else None
 
 
 def unpack_args(*args):
@@ -46,7 +53,7 @@ def unpack_args(*args):
     return x,y,z
 
 def rot_matrix(*args, rotate_order="xyz"):
-    """Compute combined rotation matrix directly as tuple-of-tuples."""
+    """Compute combined rotation matrix as tuple-of-tuples."""
     rx, ry, rz = unpack_args(*args)
     
     # Convert to radians and compute sin/cos once
@@ -445,7 +452,7 @@ def get_plane_rotation_from_axis(xAxis, yAxis, zAxis):
     return mat3_to_4(rotation_3x3)
     
 def mat_mul(matrix1, matrix2):
-    # Use C extension for matrix multiplication
+    """Multiply two 4x4 matrices."""
     return _c_mat4_multiply(matrix1, matrix2)
 
 def mat3_to_4(mat3):
@@ -458,7 +465,7 @@ def mat3_to_4(mat3):
     )
 
 def invert(matrix):
-    # Use C extension for 4x4 matrix inversion - avoids numpy.array allocation
+    """Invert a 4x4 matrix."""
     return _c_mat4_invert(matrix)
 
 def transpose(matrix):

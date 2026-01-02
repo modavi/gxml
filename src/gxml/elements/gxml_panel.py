@@ -110,8 +110,10 @@ class GXMLPanel(GXMLLayoutElement):
         self.thickness = float(ctx.getAttribute("thickness", self.thickness))
         
     def transform_point(self, point):
-        point = self.quad_interpolator.get_interpolated_point(point)
-        return super().transform_point(point)
+        # Use combined bilinear + transform when available
+        t, s, z = point[0], point[1], point[2] if len(point) > 2 else 0.0
+        quad_points = self.quad_interpolator.get_quad_points()
+        return self.transform.bilinear_transform_point(t, s, z, quad_points)
     
     def invalidate_caches(self):
         """Clear cached computations. Call when transform changes."""

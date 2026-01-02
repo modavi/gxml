@@ -1185,7 +1185,7 @@ class GXMLTransformTests(unittest.TestCase):
         from gxml_types import GXMLTransform
         
         transform = GXMLTransform()
-        transform.transformationMatrix = GXMLMath.build_transform_matrix([10, 0, 0], [0, 0, 0], [2, 2, 2])
+        transform.set_world_matrix(GXMLMath.build_transform_matrix([10, 0, 0], [0, 0, 0], [2, 2, 2]))
         
         # Local [0,0,0] -> world [10,0,0]
         world = transform.transform_point([0, 0, 0])

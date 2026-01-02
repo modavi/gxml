@@ -309,11 +309,11 @@ class GXMLConstructLayout(GXMLBaseLayout):
         spanTransform = copy.copy(element.spanElement.transform) if element.spanElement else None
         
         if spanTransform:
-            element.transform.localTransformationMatrix = self.calculate_span_matrix(element, attachTransform, element.attachOffset, spanTransform, element.spanOffset, height)
+            element.transform.set_local_matrix(self.calculate_span_matrix(element, attachTransform, element.attachOffset, spanTransform, element.spanOffset, height))
         
         if attachTransform:
             attachMatrix = GXMLMath.translate_matrix(element.attachOffset)
-            attachTransform.transformationMatrix = GXMLMath.mat_mul(attachMatrix, attachTransform.transformationMatrix)
-            attachTransform.localTransformationMatrix = GXMLMath.mat_mul(attachMatrix, attachTransform.localTransformationMatrix)
+            attachTransform.set_world_matrix(GXMLMath.mat_mul(attachMatrix, attachTransform.transformationMatrix))
+            attachTransform.set_local_matrix(GXMLMath.mat_mul(attachMatrix, attachTransform.localTransformationMatrix))
             
         element.transform.recalculate(attachTransform)
