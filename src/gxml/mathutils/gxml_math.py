@@ -1,7 +1,7 @@
 import numpy as np
 import math
 from .vec3 import Vec3, transform_point as vec3_transform_point, intersect_line_plane as vec3_intersect_line_plane
-from ._vec3 import lerp as _c_lerp, mat4_invert as _c_mat4_invert
+from ._vec3 import lerp as _c_lerp, mat4_invert as _c_mat4_invert, find_interpolated_point as _c_find_interpolated_point
 #from scipy.spatial.transform import Rotation as R
 
 # Pre-allocated identity matrix (read-only reference)
@@ -737,19 +737,7 @@ def is_point_inside_polygon(point, polygon):
     the interpolated value (0-1) of the point between those two endpoints. If the point is past either endpoint
     it can go beyond 0-1. '''
 def find_interpolated_point(point, p1, p2):
-    p1 = np.array(p1)
-    p2 = np.array(p2)
-    point = np.array(point)
-    
-    # Calculate the vectors
-    segment_vector = p2 - p1
-    point_vector = point - p1
-    
-    # Calculate the interpolation value
-    dot_product = np.dot(point_vector, segment_vector)
-    interpolation = dot_product / np.dot(segment_vector, segment_vector)
-    
-    return interpolation
+    return _c_find_interpolated_point(point, p1, p2)
 
 def lerp(t, a, b):
     # For 3D vectors, use C extension - much faster than numpy

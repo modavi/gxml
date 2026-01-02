@@ -573,6 +573,37 @@ static PyObject *vec3_mat4_invert(PyObject *self, PyObject *args) {
     );
 }
 
+/* find_interpolated_point(point, p1, p2) - Find interpolation value of point on line segment */
+static PyObject *vec3_find_interpolated_point(PyObject *self, PyObject *args) {
+    PyObject *point_obj, *p1_obj, *p2_obj;
+    double px, py, pz, p1x, p1y, p1z, p2x, p2y, p2z;
+    
+    if (!PyArg_ParseTuple(args, "OOO", &point_obj, &p1_obj, &p2_obj)) return NULL;
+    
+    if (!Vec3_extract(point_obj, &px, &py, &pz)) return NULL;
+    if (!Vec3_extract(p1_obj, &p1x, &p1y, &p1z)) return NULL;
+    if (!Vec3_extract(p2_obj, &p2x, &p2y, &p2z)) return NULL;
+    
+    /* segment_vector = p2 - p1 */
+    double sx = p2x - p1x;
+    double sy = p2y - p1y;
+    double sz = p2z - p1z;
+    
+    /* point_vector = point - p1 */
+    double vx = px - p1x;
+    double vy = py - p1y;
+    double vz = pz - p1z;
+    
+    /* dot(point_vector, segment_vector) / dot(segment_vector, segment_vector) */
+    double denom = sx*sx + sy*sy + sz*sz;
+    if (fabs(denom) < 1e-15) {
+        return PyFloat_FromDouble(0.0);
+    }
+    
+    double numer = vx*sx + vy*sy + vz*sz;
+    return PyFloat_FromDouble(numer / denom);
+}
+
 /* Module method definitions */
 static PyMethodDef vec3_methods[] = {
     {"transform_point", vec3_transform_point, METH_VARARGS, 
@@ -593,6 +624,8 @@ static PyMethodDef vec3_methods[] = {
      "Linear interpolation: lerp(t, a, b) returns Vec3"},
     {"mat4_invert", vec3_mat4_invert, METH_VARARGS,
      "Invert a 4x4 matrix, returns tuple of tuples"},
+    {"find_interpolated_point", vec3_find_interpolated_point, METH_VARARGS,
+     "Find interpolation value of point on line segment"},
     {NULL, NULL, 0, NULL}
 };
 
