@@ -392,6 +392,21 @@ class ScaleInheritance:
     Ignore = 4
     
 def combine_transform(localMatrix, parentMatrix, parentLocalMatrix, scaleInheritance):
+    # Fast path for default scale inheritance - no matrix decomposition needed
+    if scaleInheritance == ScaleInheritance.Default:
+        return mat_mul(localMatrix, parentMatrix)
+    
+    # For Ignore with identity scale, simplify to Default behavior
+    if scaleInheritance == ScaleInheritance.Ignore:
+        # Quick check: if parentLocalMatrix is identity-like for scale (diagonal is 1s)
+        # We can check the 3x3 upper-left portion
+        if (abs(parentLocalMatrix[0, 0] - 1.0) < 1e-10 and 
+            abs(parentLocalMatrix[1, 1] - 1.0) < 1e-10 and 
+            abs(parentLocalMatrix[2, 2] - 1.0) < 1e-10):
+            # Parent has unit scale, so invert(parent_local_scales) is identity
+            return mat_mul(localMatrix, parentMatrix)
+    
+    # Only decompose matrices for non-trivial scale inheritance
     tlp,rlp,slp = explode_matrix(parentLocalMatrix)
     tp,rp,sp = explode_matrix(parentMatrix)
     tl,rl,sl = explode_matrix(localMatrix)
@@ -407,25 +422,22 @@ def combine_transform(localMatrix, parentMatrix, parentLocalMatrix, scaleInherit
     else:
         invertParentLocalScales = invert(parentLocalScales)
     
-    combined = identity()
     match scaleInheritance:
-        case ScaleInheritance.Default:
-            # world = local * parent_world
-            combined = mat_mul(localMatrix, parentMatrix)
         case ScaleInheritance.OffsetOnly:
             # world = local_scale_rotates * invert(parent_local_scales) * local_translates * parent_world
-            combined = mat_mul(mat_mul(mat_mul(localScaleRotates, invertParentLocalScales), translate_matrix(tl)), parentMatrix)
+            return mat_mul(mat_mul(mat_mul(localScaleRotates, invertParentLocalScales), translate_matrix(tl)), parentMatrix)
         case ScaleInheritance.OffsetAndScale:
             # world = parent_local_scales * local_scale_rotates * invert(parent_local_scales) * T * parent_world
-            combined = mat_mul(mat_mul(mat_mul(mat_mul(parentLocalScales, localScaleRotates), invertParentLocalScales), translate_matrix(tl)), parentMatrix)
+            return mat_mul(mat_mul(mat_mul(mat_mul(parentLocalScales, localScaleRotates), invertParentLocalScales), translate_matrix(tl)), parentMatrix)
         case ScaleInheritance.ScaleOnly:
             # world = parent_local_scales * local * invert(parent_local_scales) * parent_world
-            combined = mat_mul(mat_mul(mat_mul(parentLocalScales, localMatrix), invertParentLocalScales), parentMatrix)
+            return mat_mul(mat_mul(mat_mul(parentLocalScales, localMatrix), invertParentLocalScales), parentMatrix)
         case ScaleInheritance.Ignore:
             # world = local * invert(parent_local_scales) * parent_world
-            combined = mat_mul(mat_mul(localMatrix, invertParentLocalScales), parentMatrix)
+            return mat_mul(mat_mul(localMatrix, invertParentLocalScales), parentMatrix)
     
-    return combined
+    # Fallback
+    return mat_mul(localMatrix, parentMatrix)
 
 # Finds the intersection from a ray starting at point, in direction, with the line segment created by p1 and p2 as the endpoints
 def find_intersection_ray_to_segment(point, direction, p1, p2):
