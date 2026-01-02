@@ -425,12 +425,17 @@ class GXMLPanel(GXMLLayoutElement):
         if side in self._face_normal_cache:
             return self._face_normal_cache[side]
         
-        # Get three points on the face to compute the normal
+        # Get three points on the face to compute the normal (batched for speed)
         local_points = self.get_local_points_from_side(side)
-        world_points = [
-            self.transform_point((lp[0], lp[1], (lp[2] - 0.5) * self.thickness))
+        points_for_transform = [
+            (lp[0], lp[1], (lp[2] - 0.5) * self.thickness)
             for lp in local_points[:3]
         ]
+        world_points = batch_bilinear_transform(
+            points_for_transform,
+            self.quad_interpolator.get_quad_points(),
+            self.transform.transformationMatrix
+        )
         
         # Compute normal using cross product of two edge vectors
         edge1 = (world_points[1][0] - world_points[0][0], 
