@@ -33,7 +33,17 @@ class GXMLParsingContext:
         self.vars = vars
         
     def eval(self, str):
-        return eval(str, None, self.vars)
+        # Fast path for simple numeric values (most common case)
+        # This avoids the overhead of Python's eval() for simple numbers
+        try:
+            # Try int first (cheaper check)
+            if str.isdigit() or (str[0] == '-' and str[1:].isdigit()):
+                return int(str)
+            # Then try float
+            return float(str)
+        except (ValueError, IndexError):
+            # Fall back to full eval for expressions
+            return eval(str, None, self.vars)
     
 class GXMLParser(object):
     """
