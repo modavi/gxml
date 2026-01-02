@@ -290,6 +290,81 @@ def _spatial_hash(position: np.ndarray) -> Tuple[float, float, float]:
             round(position[2], SPATIAL_HASH_PRECISION))
 
 
+def _get_panel_centerline_bounds(panel: 'GXMLPanel') -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    """Get axis-aligned bounding box for a panel's centerline."""
+    p_start = panel.transform_point([0, 0, 0])
+    p_end = panel.transform_point([1, 0, 0])
+    
+    min_x = min(p_start[0], p_end[0])
+    min_y = min(p_start[1], p_end[1])
+    min_z = min(p_start[2], p_end[2])
+    max_x = max(p_start[0], p_end[0])
+    max_y = max(p_start[1], p_end[1])
+    max_z = max(p_start[2], p_end[2])
+    
+    return ((min_x, min_y, min_z), (max_x, max_y, max_z)), (p_start, p_end)
+
+
+def _build_spatial_grid(panels: List['GXMLPanel'], cell_size: float = 10.0) -> Dict[Tuple[int, int, int], List[Tuple['GXMLPanel', Tuple, Tuple]]]:
+    """
+    Build a spatial hash grid for panels.
+    
+    Each panel is inserted into all grid cells that its bounding box overlaps.
+    Returns a dict mapping cell coordinates to lists of (panel, start_point, end_point).
+    """
+    grid: Dict[Tuple[int, int, int], List] = {}
+    
+    # Small epsilon to handle floating-point edge cases at cell boundaries
+    # e.g., a coordinate of -2.22e-16 should be treated as 0, not -1 cell
+    epsilon = 1e-9
+    
+    for panel in panels:
+        (min_pt, max_pt), (p_start, p_end) = _get_panel_centerline_bounds(panel)
+        
+        # Calculate which grid cells this panel overlaps
+        # Add epsilon to avoid floating-point boundary issues
+        min_cell_x = int((min_pt[0] - epsilon) // cell_size)
+        min_cell_y = int((min_pt[1] - epsilon) // cell_size)
+        min_cell_z = int((min_pt[2] - epsilon) // cell_size)
+        max_cell_x = int((max_pt[0] + epsilon) // cell_size)
+        max_cell_y = int((max_pt[1] + epsilon) // cell_size)
+        max_cell_z = int((max_pt[2] + epsilon) // cell_size)
+        
+        # Insert panel into all overlapping cells
+        for cx in range(min_cell_x, max_cell_x + 1):
+            for cy in range(min_cell_y, max_cell_y + 1):
+                for cz in range(min_cell_z, max_cell_z + 1):
+                    cell_key = (cx, cy, cz)
+                    if cell_key not in grid:
+                        grid[cell_key] = []
+                    grid[cell_key].append((panel, p_start, p_end))
+    
+    return grid
+
+
+def _get_candidate_pairs_from_grid(grid: Dict[Tuple[int, int, int], List]) -> set:
+    """
+    Get candidate panel pairs from spatial grid.
+    
+    Only returns pairs that are in the same grid cell (they might intersect).
+    Returns set of (panel1, panel2, p1_start, p1_end, p2_start, p2_end) tuples.
+    """
+    checked_pairs = set()
+    candidate_pairs = []
+    
+    for cell_key, cell_panels in grid.items():
+        # Check all pairs within this cell
+        for i, (panel1, p1_start, p1_end) in enumerate(cell_panels):
+            for panel2, p2_start, p2_end in cell_panels[i+1:]:
+                # Use id() to create a unique pair key
+                pair_key = (id(panel1), id(panel2)) if id(panel1) < id(panel2) else (id(panel2), id(panel1))
+                if pair_key not in checked_pairs:
+                    checked_pairs.add(pair_key)
+                    candidate_pairs.append((panel1, panel2, p1_start, p1_end, p2_start, p2_end))
+    
+    return candidate_pairs
+
+
 class IntersectionSolver:
     """
     Discovers panel relationships and calculates intersection geometry.
@@ -546,48 +621,46 @@ class IntersectionSolver:
         # Key: spatial hash, Value: {panel_t_values: dict, position: ndarray}
         intersection_data: Dict[Tuple[float, float, float], Dict] = {}
         
-        # Check all pairs of panels for centerline intersections
-        for i, panel1 in enumerate(panels):
-            p1_start = panel1.transform_point([0, 0, 0])
-            p1_end = panel1.transform_point([1, 0, 0])
+        # Build spatial grid and get candidate pairs (O(n) instead of O(n²) for sparse layouts)
+        # Choose cell size based on typical panel dimensions - larger cells for fewer false negatives
+        grid = _build_spatial_grid(panels, cell_size=20.0)
+        candidate_pairs = _get_candidate_pairs_from_grid(grid)
+        
+        # Check only candidate pairs from spatial grid
+        for panel1, panel2, p1_start, p1_end, p2_start, p2_end in candidate_pairs:
+            # Find where centerlines intersect
+            intersection_pos = GXMLMath.find_intersection_between_segments(
+                p1_start, p1_end, p2_start, p2_end
+            )
             
-            for panel2 in panels[i+1:]:
-                p2_start = panel2.transform_point([0, 0, 0])
-                p2_end = panel2.transform_point([1, 0, 0])
-                
-                # Find where centerlines intersect
-                intersection_pos = GXMLMath.find_intersection_between_segments(
-                    p1_start, p1_end, p2_start, p2_end
-                )
-                
-                if intersection_pos is None:
-                    continue
-                
-                # Calculate t-values for both panels
-                t1 = GXMLMath.find_interpolated_point(intersection_pos, p1_start, p1_end)
-                t2 = GXMLMath.find_interpolated_point(intersection_pos, p2_start, p2_end)
-                
-                if t1 is None or t2 is None:
-                    continue
-                
-                # Add to intersection data at this spatial location
-                pos_key = _spatial_hash(intersection_pos)
-                if pos_key not in intersection_data:
-                    intersection_data[pos_key] = {
-                        'panel_t_values': {},
-                        'position': intersection_pos
-                    }
-                
-                data = intersection_data[pos_key]
-                
-                # Accumulate t-values for deduplication/averaging
-                if panel1 not in data['panel_t_values']:
-                    data['panel_t_values'][panel1] = []
-                data['panel_t_values'][panel1].append(t1)
-                
-                if panel2 not in data['panel_t_values']:
-                    data['panel_t_values'][panel2] = []
-                data['panel_t_values'][panel2].append(t2)
+            if intersection_pos is None:
+                continue
+            
+            # Calculate t-values for both panels
+            t1 = GXMLMath.find_interpolated_point(intersection_pos, p1_start, p1_end)
+            t2 = GXMLMath.find_interpolated_point(intersection_pos, p2_start, p2_end)
+            
+            if t1 is None or t2 is None:
+                continue
+            
+            # Add to intersection data at this spatial location
+            pos_key = _spatial_hash(intersection_pos)
+            if pos_key not in intersection_data:
+                intersection_data[pos_key] = {
+                    'panel_t_values': {},
+                    'position': intersection_pos
+                }
+            
+            data = intersection_data[pos_key]
+            
+            # Accumulate t-values for deduplication/averaging
+            if panel1 not in data['panel_t_values']:
+                data['panel_t_values'][panel1] = []
+            data['panel_t_values'][panel1].append(t1)
+            
+            if panel2 not in data['panel_t_values']:
+                data['panel_t_values'][panel2] = []
+            data['panel_t_values'][panel2].append(t2)
         
         # Finalize intersections from collected data
         intersections = []
