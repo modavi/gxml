@@ -9,6 +9,11 @@
  * Data stays in C memory between stages to avoid Python marshaling overhead.
  * 
  * Build with: python setup_c_solvers.py build_ext --inplace
+ * 
+ * Cross-platform support:
+ *   - macOS: clang with -O3 -ffast-math
+ *   - Linux: gcc with -O3 -ffast-math -march=native
+ *   - Windows: MSVC with /O2 /fp:fast
  */
 
 #define PY_SSIZE_T_CLEAN
@@ -17,6 +22,22 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+
+/* ============================================================================
+ * Platform-Specific Defines
+ * ============================================================================ */
+
+#ifdef _MSC_VER
+    /* Microsoft Visual C++ */
+    #define INLINE __forceinline
+    #define RESTRICT __restrict
+    #pragma warning(disable: 4244)  /* conversion warnings */
+    #pragma warning(disable: 4996)  /* deprecated functions */
+#else
+    /* GCC/Clang */
+    #define INLINE static inline __attribute__((always_inline))
+    #define RESTRICT __restrict__
+#endif
 
 /* ============================================================================
  * Constants

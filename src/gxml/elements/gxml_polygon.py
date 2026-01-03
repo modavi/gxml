@@ -17,7 +17,31 @@ from typing import List, Tuple, Optional
 import math
 from elements.gxml_base_element import GXMLLayoutElement
 from gxml_types import *
-from mathutils._vec3 import cross_product as _cross, normalize as _normalize, distance as _distance
+
+# Try C extension, fall back to pure Python
+try:
+    from mathutils._vec3 import cross_product as _cross, normalize as _normalize, distance as _distance
+except ImportError:
+    # Pure Python fallbacks
+    def _cross(a, b):
+        return (
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]
+        )
+    
+    def _normalize(v):
+        length = math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
+        if length < 1e-10:
+            return (0.0, 0.0, 0.0)
+        inv_len = 1.0 / length
+        return (v[0] * inv_len, v[1] * inv_len, v[2] * inv_len)
+    
+    def _distance(a, b):
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        dz = a[2] - b[2]
+        return math.sqrt(dx*dx + dy*dy + dz*dz)
 
 
 def _vec_sub(a, b):

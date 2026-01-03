@@ -4,7 +4,7 @@
 
 import math
 from enum import IntEnum
-from typing import Optional
+from typing import Optional, Tuple
 from elements.gxml_base_element import GXMLLayoutElement
 from gxml_types import *
 from gxml_profile import *
@@ -104,6 +104,7 @@ class GXMLPanel(GXMLLayoutElement):
         self._face_normal_cache = {}
         self._face_point_cache = {}
         self._primary_axis_ray_cache = {}
+        self._dimensions_cache = None
         
     def parse(self, ctx):
         super().parse(ctx)
@@ -120,6 +121,63 @@ class GXMLPanel(GXMLLayoutElement):
         self._face_normal_cache.clear()
         self._face_point_cache.clear()
         self._primary_axis_ray_cache.clear()
+        self._dimensions_cache = None
+    
+    # =========================================================================
+    # Dimension Properties (computed from transform)
+    # =========================================================================
+    
+    def _compute_dimensions(self):
+        """Compute and cache width/height from world-space endpoints."""
+        if self._dimensions_cache is None:
+            # Width: distance from start to end (along primary axis)
+            p_start = self.transform_point([0, 0, 0])
+            p_end = self.transform_point([1, 0, 0])
+            dx = p_end[0] - p_start[0]
+            dy = p_end[1] - p_start[1]
+            dz = p_end[2] - p_start[2]
+            width = math.sqrt(dx*dx + dy*dy + dz*dz)
+            
+            # Height: distance from bottom to top (along secondary axis)
+            p_bottom = self.transform_point([0, 0, 0])
+            p_top = self.transform_point([0, 1, 0])
+            dx = p_top[0] - p_bottom[0]
+            dy = p_top[1] - p_bottom[1]
+            dz = p_top[2] - p_bottom[2]
+            height = math.sqrt(dx*dx + dy*dy + dz*dz)
+            
+            self._dimensions_cache = (width, height)
+        return self._dimensions_cache
+    
+    @property
+    def width(self) -> float:
+        """Panel width (distance from start to end in world space)."""
+        return self._compute_dimensions()[0]
+    
+    @property
+    def height(self) -> float:
+        """Panel height (distance from bottom to top in world space)."""
+        return self._compute_dimensions()[1]
+    
+    def get_centerline_endpoints(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        """
+        Get world-space centerline endpoints (start and end points).
+        
+        Returns:
+            Tuple of (start_point, end_point) as (x, y, z) tuples
+        """
+        start = self.transform_point([0, 0, 0])
+        end = self.transform_point([1, 0, 0])
+        return (start, end)
+    
+    def get_world_transform_matrix(self):
+        """
+        Get the 4x4 world transform matrix for this panel.
+        
+        Returns:
+            The transformation matrix (Mat4 or list of lists)
+        """
+        return self.transform.transformationMatrix
     
     @staticmethod
     def _get_sibling_panels(panel):
@@ -138,7 +196,13 @@ class GXMLPanel(GXMLLayoutElement):
         share the same computation. This is cleared at the start of each
         post-layout pass.
         """
-        from elements.solvers import IntersectionSolver, FaceSolver
+        from elements.solvers import (
+            get_solver_backend, 
+            get_intersection_solver, 
+            get_face_solver,
+            IntersectionSolver, 
+            FaceSolver
+        )
         
         cache_key = '_panel_solution_cache'
         parent = panel.parent
@@ -149,8 +213,17 @@ class GXMLPanel(GXMLLayoutElement):
         
         # Compute solution for all sibling panels
         all_panels = GXMLPanel._get_sibling_panels(panel)
-        intersection_solution = IntersectionSolver.solve(all_panels)
-        panel_faces = FaceSolver.solve(intersection_solution)
+        
+        # Use dynamic solver selection for Taichi backend
+        if get_solver_backend() == 'taichi':
+            ISolver = get_intersection_solver()
+            FSolver = get_face_solver()
+            intersection_solution = ISolver.solve(all_panels)
+            panel_faces = FSolver.solve(intersection_solution)
+        else:
+            # Default CPU path
+            intersection_solution = IntersectionSolver.solve(all_panels)
+            panel_faces = FaceSolver.solve(intersection_solution)
         
         # Cache on parent for sibling panels to reuse
         solution = (intersection_solution, panel_faces, False)  # False = not yet built
@@ -161,7 +234,12 @@ class GXMLPanel(GXMLLayoutElement):
     def on_post_layout(self):
         push_perf_marker(None)
         
-        from elements.solvers import get_geometry_builder, get_geometry_backend
+        from elements.solvers import (
+            get_geometry_builder, 
+            get_geometry_backend,
+            get_solver_backend,
+            get_full_geometry_builder
+        )
         
         # Get or compute the shared solution (cached on parent)
         cache_key = '_panel_solution_cache'
@@ -169,18 +247,25 @@ class GXMLPanel(GXMLLayoutElement):
         solution = GXMLPanel._get_or_compute_solution(self)
         intersection_solution, panel_faces, already_built = solution
         
-        builder = get_geometry_builder()
-        
-        # GPU backend: build_all on first panel, skip subsequent
-        # CPU backend: build per-panel as before
-        if get_geometry_backend() == 'gpu' and not already_built:
-            # Build all panels at once (GPU batching benefit)
-            builder.build_all(panel_faces, intersection_solution)
-            # Mark as built so subsequent panels skip
-            setattr(parent, cache_key, (intersection_solution, panel_faces, True))
-        elif get_geometry_backend() == 'cpu':
-            # CPU path: build per-panel (original behavior)
-            builder.build(self, panel_faces, intersection_solution)
+        # Use Taichi backend if selected
+        if get_solver_backend() == 'taichi':
+            builder = get_full_geometry_builder()
+            if not already_built:
+                builder.build_all(panel_faces, intersection_solution)
+                setattr(parent, cache_key, (intersection_solution, panel_faces, True))
+        else:
+            builder = get_geometry_builder()
+            
+            # GPU backend: build_all on first panel, skip subsequent
+            # CPU backend: build per-panel as before
+            if get_geometry_backend() == 'gpu' and not already_built:
+                # Build all panels at once (GPU batching benefit)
+                builder.build_all(panel_faces, intersection_solution)
+                # Mark as built so subsequent panels skip
+                setattr(parent, cache_key, (intersection_solution, panel_faces, True))
+            elif get_geometry_backend() == 'cpu':
+                # CPU path: build per-panel (original behavior)
+                builder.build(self, panel_faces, intersection_solution)
             
         pop_perf_marker()
     
