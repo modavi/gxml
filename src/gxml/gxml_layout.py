@@ -7,6 +7,7 @@
 """
 
 from gxml_types import *
+from gxml_profile import push_perf_marker, pop_perf_marker
 from elements.gxml_base_element import *
 from layouts.gxml_construct_layout import GXMLConstructLayout
 from layouts.gxml_stack_layout import GXMLStackLayout
@@ -51,6 +52,7 @@ class GXMLLayout(object):
             Args:
                 rootElement (GXMLElement): The element to layout.
         """
+        push_perf_marker("measure_pass")
         
         for element in (e for e in rootElement.iterate(TraversalDirection.BottomUp) if e.parent):
             layoutProcessor = GXMLLayout.get_bound_layout_processor(element.parent.childLayoutScheme)
@@ -60,6 +62,8 @@ class GXMLLayout(object):
             # layout engine applies all its defaults to the child element before it's laid out.
             layoutProcessor.conditional_apply_defaults(element)
             layoutProcessor.measure_element(element)
+        
+        pop_perf_marker()
 
     def pre_layout_pass(rootElement):
         """
@@ -70,11 +74,14 @@ class GXMLLayout(object):
             Args:
                 rootElement (GXMLElement): The element to layout.
         """
+        push_perf_marker("pre_layout_pass")
         
         for element in (e for e in rootElement.iterate(TraversalDirection.TopDownBreadthFirst) if e.parent):
             layoutProcessor = GXMLLayout.get_bound_layout_processor(element.parent.childLayoutScheme)
             layoutProcessor.pre_layout_element(element)
             element.on_pre_layout()
+        
+        pop_perf_marker()
     
     def layout_pass(rootElement):
         """
@@ -86,11 +93,14 @@ class GXMLLayout(object):
             Args:
                 rootElement (GXMLElement): The element to layout.
         """
+        push_perf_marker("layout_pass")
         
         for element in (e for e in rootElement.iterate(TraversalDirection.TopDownBreadthFirst) if e.parent):
             layoutProcessor = GXMLLayout.get_bound_layout_processor(element.parent.childLayoutScheme)
             layoutProcessor.layout_element(element)
             element.on_layout()
+        
+        pop_perf_marker()
 
     def post_layout_pass(rootElement):
         """
@@ -98,6 +108,8 @@ class GXMLLayout(object):
             Can be used to run any final adjustments to the layouts that a processor may want to do after an element has been laid out such as
             maybe applying a post process to the elements position or scale.
         """
+        push_perf_marker("post_layout_pass")
+        
         # Clear any cached solutions from previous runs (used by panel intersection solving)
         for element in rootElement.iterate(TraversalDirection.TopDownBreadthFirst):
             if hasattr(element, '_panel_solution_cache'):
@@ -107,6 +119,8 @@ class GXMLLayout(object):
             layoutProcessor = GXMLLayout.get_bound_layout_processor(element.parent.childLayoutScheme)
             layoutProcessor.post_layout_element(element)
             element.on_post_layout()
+        
+        pop_perf_marker()
             
     @staticmethod
     def bind_layout(layoutScheme, layoutProcessor):

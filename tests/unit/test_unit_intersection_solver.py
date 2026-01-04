@@ -142,14 +142,16 @@ class IntersectionSolverUnitTests(unittest.TestCase):
         self.assertEqual(solution.intersections[1].type, IntersectionType.CROSSING, "Second intersection should be crossing")
         
         # Verify first crossing at (0.5,0,0) - panel1 at t=0.25, panel2 at t=0.5
+        # CCW sorting: p1 direction=(-1,0,0) → -90°, p2 direction=(0,0,-1) → +180°
+        # Sorted ascending: -90° < 180° → [p1, p2]
         crossing0 = solution.intersections[0]
         self.assertTrue(np.allclose(crossing0.position, [0.5, 0, 0], atol=1e-6), "First crossing should be at (0.5, 0, 0)")
         self.assertEqual(len(crossing0.panels), 2, "First crossing should involve 2 panels")
         
-        self.assertEqual(crossing0.panels[0].panel, panel2, "First panel should be p2")
-        self.assertEqual(crossing0.panels[1].panel, panel1, "Second panel should be p1")
-        self.assertAlmostEqual(crossing0.panels[0].t, 0.5, places=6, msg="Panel p2 should be at t=0.5 (midspan)")
-        self.assertAlmostEqual(crossing0.panels[1].t, 0.25, places=6, msg="Panel p1 should be at t=0.25 (midspan)")
+        self.assertEqual(crossing0.panels[0].panel, panel1, "First panel should be p1")
+        self.assertEqual(crossing0.panels[1].panel, panel2, "Second panel should be p2")
+        self.assertAlmostEqual(crossing0.panels[0].t, 0.25, places=6, msg="Panel p1 should be at t=0.25 (midspan)")
+        self.assertAlmostEqual(crossing0.panels[1].t, 0.5, places=6, msg="Panel p2 should be at t=0.5 (midspan)")
         
         # Verify second crossing at (1.5,0,0) - panel1 at t=0.75, panel3 at t=0.5
         crossing1 = solution.intersections[1]

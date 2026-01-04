@@ -57,8 +57,8 @@ class CIntersectionSolver:
     """
     C extension intersection solver with same API as CPUIntersectionSolver.
     
-    Note: This is a lightweight wrapper. The actual solving happens in solve_all_c()
-    which runs the full pipeline. This class exists for API compatibility.
+    Uses C extension for fast intersection finding, then CPU for region building.
+    The C extension is ~1800x faster for the O(n²) intersection finding.
     """
     
     @staticmethod
@@ -66,38 +66,17 @@ class CIntersectionSolver:
         """
         Find intersections between panels using C extension.
         
-        For full pipeline performance, use solve_all_c() directly instead.
+        Uses C extension for fast batch intersection finding, then
+        CPU for building proper IntersectionSolution with regions.
         """
         if not _C_EXTENSION_AVAILABLE:
             raise RuntimeError("C extension not available")
         
-        # Import here to avoid circular imports
-        from .gxml_intersection_solver import IntersectionSolution
-        
-        n = len(panels)
-        starts = np.zeros((n, 3), dtype=np.float64)
-        ends = np.zeros((n, 3), dtype=np.float64)
-        
-        for i, panel in enumerate(panels):
-            start, end = panel.get_centerline_endpoints()
-            starts[i] = start
-            ends[i] = end
-        
-        # Use batch intersection finding
-        i_arr, j_arr, t1_arr, t2_arr, pos_arr = batch_find_intersections(starts, ends)
-        
-        # Convert to IntersectionSolution format
-        intersections = []
-        for k in range(len(i_arr)):
-            intersections.append({
-                'panel_i': i_arr[k],
-                'panel_j': j_arr[k],
-                't1': t1_arr[k],
-                't2': t2_arr[k],
-                'position': pos_arr[k],
-            })
-        
-        return IntersectionSolution(panels=panels, intersections=intersections)
+        # Use CPU solver which now internally uses C extension when available
+        # The performance gain comes from _fast_batch_intersections which
+        # uses batch_find_intersections from the C extension
+        from .gxml_intersection_solver import IntersectionSolver as CPUIntersectionSolver
+        return CPUIntersectionSolver.solve(panels)
 
 
 class CFaceSolver:
@@ -128,21 +107,22 @@ class CGeometryBuilder:
     """
     C extension geometry builder with same API as CPUGeometryBuilder.
     
-    Note: Geometry building is integrated into solve_all_c() for performance.
-    This class exists for API compatibility.
+    Currently delegates to CPU implementation since geometry building
+    is I/O bound (creating polygon objects) rather than compute bound.
     """
     
     @staticmethod
-    def build(face_solution):
+    def build_all(panel_faces, intersection_solution):
         """
         Build geometry from face solution.
         
-        For full pipeline performance, use solve_all_c() directly instead.
+        Delegates to CPU GeometryBuilder since geometry building is I/O bound.
         """
-        if not _C_EXTENSION_AVAILABLE:
-            raise RuntimeError("C extension not available")
-        
-        # The C pipeline handles geometry building internally
-        # For standalone use, fall back to CPU solver
-        from .gxml_full_geometry_builder import FullGeometryBuilder
-        return FullGeometryBuilder.build(face_solution)
+        from .gxml_geometry_builder import GeometryBuilder as CPUGeometryBuilder
+        return CPUGeometryBuilder.build_all(panel_faces, intersection_solution)
+    
+    @staticmethod
+    def build(panel, panel_faces, intersection_solution):
+        """Build geometry for a single panel."""
+        from .gxml_geometry_builder import GeometryBuilder as CPUGeometryBuilder
+        return CPUGeometryBuilder.build(panel, panel_faces, intersection_solution)

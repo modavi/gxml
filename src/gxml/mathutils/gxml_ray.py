@@ -41,6 +41,7 @@ class GXMLRay:
         dx = end[0] - start[0]
         dy = end[1] - start[1]
         dz = end[2] - start[2]
+        
         length = math.sqrt(dx * dx + dy * dy + dz * dz)
         if length < tolerance:
             return None

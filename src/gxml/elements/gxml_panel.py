@@ -200,8 +200,6 @@ class GXMLPanel(GXMLLayoutElement):
             get_solver_backend, 
             get_intersection_solver, 
             get_face_solver,
-            IntersectionSolver, 
-            FaceSolver
         )
         
         cache_key = '_panel_solution_cache'
@@ -214,16 +212,18 @@ class GXMLPanel(GXMLLayoutElement):
         # Compute solution for all sibling panels
         all_panels = GXMLPanel._get_sibling_panels(panel)
         
-        # Use dynamic solver selection for Taichi backend
-        if get_solver_backend() == 'taichi':
-            ISolver = get_intersection_solver()
-            FSolver = get_face_solver()
-            intersection_solution = ISolver.solve(all_panels)
-            panel_faces = FSolver.solve(intersection_solution)
-        else:
-            # Default CPU path
-            intersection_solution = IntersectionSolver.solve(all_panels)
-            panel_faces = FaceSolver.solve(intersection_solution)
+        # Use dynamic solver selection based on backend setting
+        # This works for 'cpu', 'c', 'taichi', etc.
+        ISolver = get_intersection_solver()
+        FSolver = get_face_solver()
+        
+        push_perf_marker("intersection_solver")
+        intersection_solution = ISolver.solve(all_panels)
+        pop_perf_marker()
+        
+        push_perf_marker("face_solver")
+        panel_faces = FSolver.solve(intersection_solution)
+        pop_perf_marker()
         
         # Cache on parent for sibling panels to reuse
         solution = (intersection_solution, panel_faces, False)  # False = not yet built
@@ -232,7 +232,7 @@ class GXMLPanel(GXMLLayoutElement):
         return solution
         
     def on_post_layout(self):
-        push_perf_marker(None)
+        push_perf_marker("on_post_layout")
         
         from elements.solvers import (
             get_geometry_builder, 
@@ -251,7 +251,9 @@ class GXMLPanel(GXMLLayoutElement):
         if get_solver_backend() == 'taichi':
             builder = get_full_geometry_builder()
             if not already_built:
+                push_perf_marker("geometry_builder")
                 builder.build_all(panel_faces, intersection_solution)
+                pop_perf_marker()
                 setattr(parent, cache_key, (intersection_solution, panel_faces, True))
         else:
             builder = get_geometry_builder()
@@ -260,12 +262,16 @@ class GXMLPanel(GXMLLayoutElement):
             # CPU backend: build per-panel as before
             if get_geometry_backend() == 'gpu' and not already_built:
                 # Build all panels at once (GPU batching benefit)
+                push_perf_marker("geometry_builder")
                 builder.build_all(panel_faces, intersection_solution)
+                pop_perf_marker()
                 # Mark as built so subsequent panels skip
                 setattr(parent, cache_key, (intersection_solution, panel_faces, True))
             elif get_geometry_backend() == 'cpu':
                 # CPU path: build per-panel (original behavior)
+                push_perf_marker("geometry_builder")
                 builder.build(self, panel_faces, intersection_solution)
+                pop_perf_marker()
             
         pop_perf_marker()
     
@@ -294,7 +300,7 @@ class GXMLPanel(GXMLLayoutElement):
         Returns:
             GXMLQuad representing the face
         """
-        push_perf_marker()
+        push_perf_marker("create_panel_side")
         
         if corners is None:
             corners = [(0, 0), (1, 0), (1, 1), (0, 1)]

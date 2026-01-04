@@ -24,22 +24,25 @@ from elements.solvers.gxml_face_solver import FaceSegment, SegmentedPanel
 from elements.solvers.gxml_intersection_solver import IntersectionSolution
 from elements.gxml_panel import GXMLPanel, PanelSide
 
-# Import GPU accelerator with fallback
-try:
-    from gpu.metal_geometry import get_accelerator, is_metal_available
-    _ACCELERATOR = None  # Lazy init
-except ImportError:
-    get_accelerator = None
-    is_metal_available = lambda: False
-    _ACCELERATOR = None
-
+# Import GPU accelerator using shader_backend (cross-platform)
+_SHADER_BACKEND = None
 
 def _get_accelerator():
-    """Get or create the GPU accelerator (lazy singleton)."""
-    global _ACCELERATOR
-    if _ACCELERATOR is None and get_accelerator is not None:
-        _ACCELERATOR = get_accelerator()
-    return _ACCELERATOR
+    """Get or create the GPU shader backend (lazy singleton)."""
+    global _SHADER_BACKEND
+    if _SHADER_BACKEND is None:
+        try:
+            from gpu.shader_backend import get_shader_backend
+            _SHADER_BACKEND = get_shader_backend()
+        except ImportError:
+            pass
+    return _SHADER_BACKEND
+
+
+def is_gpu_available():
+    """Check if GPU acceleration is available."""
+    backend = _get_accelerator()
+    return backend is not None and backend.is_available
 
 
 # Face side enum mapping (must match PanelSide)
@@ -159,11 +162,16 @@ class GPUGeometryBuilder:
         if batch.count == 0:
             return
         
-        # GPU compute
-        world_points = accel.compute_face_points_batch(
+        # GPU compute - use shader_backend interface
+        # Split ts_coords into separate t and s arrays
+        t_coords = batch.ts_coords[:, 0]
+        s_coords = batch.ts_coords[:, 1]
+        
+        world_points = accel.compute_face_points(
             batch.matrices,
             batch.half_thicknesses,
-            batch.ts_coords,
+            t_coords,
+            s_coords,
             batch.face_sides
         )
         
@@ -284,8 +292,20 @@ class GPUGeometryBuilder:
 # Backend switching
 # -------------------------------------------------------------------------
 
-# Current active backend
-_GEOMETRY_BACKEND = 'cpu'
+# Current active backend - auto-detect best available
+_GEOMETRY_BACKEND = None  # Will be set on first access
+
+
+def _auto_detect_backend() -> str:
+    """Auto-detect the best available geometry backend."""
+    # Check if GPU is available and worthwhile
+    backend = _get_accelerator()
+    if backend is not None and backend.is_available:
+        # GPU is available, but check if it's worth the overhead
+        # For now, prefer CPU since C extension is very fast for transforms
+        # GPU mainly helps for very large batches (1000+ corners)
+        return 'cpu'  # Default to CPU, user can opt-in to GPU
+    return 'cpu'
 
 
 def set_geometry_backend(backend: str) -> None:
@@ -293,16 +313,22 @@ def set_geometry_backend(backend: str) -> None:
     Set the geometry builder backend.
     
     Args:
-        backend: 'gpu' for GPU acceleration, 'cpu' for standard CPU path
+        backend: 'gpu' for GPU acceleration, 'cpu' for standard CPU path, 'auto' for auto-detect
     """
     global _GEOMETRY_BACKEND
-    if backend not in ('gpu', 'cpu'):
-        raise ValueError(f"Invalid backend: {backend}. Use 'gpu' or 'cpu'.")
-    _GEOMETRY_BACKEND = backend
+    if backend == 'auto':
+        _GEOMETRY_BACKEND = _auto_detect_backend()
+    elif backend not in ('gpu', 'cpu'):
+        raise ValueError(f"Invalid backend: {backend}. Use 'gpu', 'cpu', or 'auto'.")
+    else:
+        _GEOMETRY_BACKEND = backend
 
 
 def get_geometry_backend() -> str:
     """Get the current geometry builder backend."""
+    global _GEOMETRY_BACKEND
+    if _GEOMETRY_BACKEND is None:
+        _GEOMETRY_BACKEND = _auto_detect_backend()
     return _GEOMETRY_BACKEND
 
 

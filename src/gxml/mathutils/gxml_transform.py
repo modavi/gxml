@@ -165,9 +165,9 @@ class GXMLTransform:
                 t, s, z_offset, 
                 quad_points[0], quad_points[1], quad_points[2], quad_points[3]
             )
-        # Fallback: do it in two steps
+        # Fallback: do it in two steps using C extension bilinear_interpolate
         from mathutils._vec3 import bilinear_interpolate
-        interp = bilinear_interpolate(t, s, quad_points[0], quad_points[1], 
+        interp = bilinear_interpolate(t, s, quad_points[0], quad_points[1],
                                       quad_points[2], quad_points[3])
         point = (interp[0], interp[1], z_offset + interp[2])
         return GXMLMath.transform_point(point, self.transformationMatrix)

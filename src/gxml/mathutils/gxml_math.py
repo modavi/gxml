@@ -14,6 +14,7 @@ try:
                         distance as _c_distance,
                         length as _c_length,
                         project_point_on_ray as _c_project_point_on_ray,
+                        create_transform_matrix_from_quad as _c_create_transform_matrix_from_quad,
                         Mat4)
     _HAS_C_EXTENSION = True
     _HAS_MAT4 = True
@@ -24,6 +25,7 @@ except ImportError:
     _c_mat4_multiply = _c_cross_product = _c_is_point_on_line_segment = None
     _c_batch_transform_points = _c_dot = _c_normalize = None
     _c_distance = _c_length = _c_project_point_on_ray = None
+    _c_create_transform_matrix_from_quad = None
     Mat4 = None
 #from scipy.spatial.transform import Rotation as R
 
@@ -247,8 +249,12 @@ def identity():
 # Use optimized transform_point from vec3 module (C extension if available)
 transform_point = vec3_transform_point
 
-# Batch transform multiple points by a 4x4 matrix at once (C extension)
-batch_transform_points = _c_batch_transform_points
+def batch_transform_points(points, matrix):
+    """Batch transform multiple points by a 4x4 matrix."""
+    if _c_batch_transform_points is not None:
+        return _c_batch_transform_points(points, matrix)
+    # Pure Python fallback
+    return [transform_point(p, matrix) for p in points]
     
 # Rotate the vector by the input transformation matrix. The rotation component is extracted from the matrix and used to rotate the vector
 # while ensuring its length stays unmodified.    
@@ -345,6 +351,10 @@ def create_transform_matrix_from_quad(points):
     
     Returns a tuple-of-tuples (4x4 matrix) for efficient use with C transform_point.
     """
+    # Use C extension if available
+    if _c_create_transform_matrix_from_quad is not None:
+        return _c_create_transform_matrix_from_quad(points)
+    
     if len(points) != 4:
         raise ValueError("Must provide exactly 4 world points")
     
@@ -453,7 +463,15 @@ def get_plane_rotation_from_axis(xAxis, yAxis, zAxis):
     
 def mat_mul(matrix1, matrix2):
     """Multiply two 4x4 matrices."""
-    return _c_mat4_multiply(matrix1, matrix2)
+    if _c_mat4_multiply is not None:
+        return _c_mat4_multiply(matrix1, matrix2)
+    # Pure Python fallback
+    result = [[0.0] * 4 for _ in range(4)]
+    for i in range(4):
+        for j in range(4):
+            for k in range(4):
+                result[i][j] += matrix1[i][k] * matrix2[k][j]
+    return tuple(tuple(row) for row in result)
 
 def mat3_to_4(mat3):
     # Convert 3x3 to 4x4 - returns tuple-of-tuples
@@ -466,7 +484,44 @@ def mat3_to_4(mat3):
 
 def invert(matrix):
     """Invert a 4x4 matrix."""
-    return _c_mat4_invert(matrix)
+    if _c_mat4_invert is not None:
+        return _c_mat4_invert(matrix)
+    # Pure Python 4x4 matrix inversion using adjugate method
+    m = matrix
+    
+    def det3(a, b, c, d, e, f, g, h, i):
+        return a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g)
+    
+    # Calculate cofactors
+    cof = [[0.0] * 4 for _ in range(4)]
+    for i in range(4):
+        for j in range(4):
+            # Minor matrix (3x3) excluding row i and col j
+            minor = []
+            for r in range(4):
+                if r == i:
+                    continue
+                row = []
+                for c in range(4):
+                    if c == j:
+                        continue
+                    row.append(m[r][c])
+                minor.append(row)
+            # Cofactor with sign
+            sign = (-1) ** (i + j)
+            cof[i][j] = sign * det3(minor[0][0], minor[0][1], minor[0][2],
+                                    minor[1][0], minor[1][1], minor[1][2],
+                                    minor[2][0], minor[2][1], minor[2][2])
+    
+    # Determinant from first row
+    det = sum(m[0][j] * cof[0][j] for j in range(4))
+    if abs(det) < 1e-10:
+        return identity()  # Return identity if singular
+    
+    # Adjugate (transpose of cofactor matrix) divided by determinant
+    inv_det = 1.0 / det
+    result = [[cof[j][i] * inv_det for j in range(4)] for i in range(4)]
+    return tuple(tuple(row) for row in result)
 
 def transpose(matrix):
     # Transpose a matrix - returns tuple-of-tuples
@@ -734,7 +789,43 @@ def find_intersection_between_segments(p1, p2, p3, p4, tol=1e-6):
     return None
 
 def is_point_on_line_segment(point, p1, p2, tol=1e-6):
-    return _c_is_point_on_line_segment(point, p1, p2, tol)
+    if _c_is_point_on_line_segment is not None:
+        return _c_is_point_on_line_segment(point, p1, p2, tol)
+    # Pure Python fallback
+    # Check if point is within tolerance of the line segment
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    dz = (p2[2] - p1[2]) if len(p1) > 2 and len(p2) > 2 else 0.0
+    
+    len_sq = dx*dx + dy*dy + dz*dz
+    if len_sq < 1e-12:
+        # Degenerate segment - check distance to p1
+        px = point[0] - p1[0]
+        py = point[1] - p1[1]
+        pz = (point[2] - p1[2]) if len(point) > 2 and len(p1) > 2 else 0.0
+        return (px*px + py*py + pz*pz) <= tol*tol
+    
+    # Project point onto line
+    px = point[0] - p1[0]
+    py = point[1] - p1[1]
+    pz = (point[2] - p1[2]) if len(point) > 2 and len(p1) > 2 else 0.0
+    
+    t = (px*dx + py*dy + pz*dz) / len_sq
+    
+    # Check if projection is within segment
+    if t < -tol or t > 1.0 + tol:
+        return False
+    
+    # Check distance from point to projection
+    proj_x = p1[0] + t * dx
+    proj_y = p1[1] + t * dy
+    proj_z = (p1[2] + t * dz) if len(p1) > 2 else 0.0
+    
+    dist_sq = (point[0] - proj_x)**2 + (point[1] - proj_y)**2
+    if len(point) > 2:
+        dist_sq += (point[2] - proj_z)**2
+    
+    return dist_sq <= tol*tol
 
 # Use optimized version from vec3 module (C extension if available)
 intersect_line_with_plane = vec3_intersect_line_plane
@@ -865,7 +956,22 @@ def is_point_inside_polygon(point, polygon):
     the interpolated value (0-1) of the point between those two endpoints. If the point is past either endpoint
     it can go beyond 0-1. '''
 def find_interpolated_point(point, p1, p2):
-    return _c_find_interpolated_point(point, p1, p2)
+    if _c_find_interpolated_point is not None:
+        return _c_find_interpolated_point(point, p1, p2)
+    # Pure Python fallback: project point onto line p1->p2
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    dz = (p2[2] - p1[2]) if len(p1) > 2 and len(p2) > 2 else 0.0
+    
+    len_sq = dx*dx + dy*dy + dz*dz
+    if len_sq < 1e-12:
+        return 0.0
+    
+    px = point[0] - p1[0]
+    py = point[1] - p1[1]
+    pz = (point[2] - p1[2]) if len(point) > 2 and len(p1) > 2 else 0.0
+    
+    return (px*dx + py*dy + pz*dz) / len_sq
 
 def lerp(t, a, b):
     # For 3D vectors, use C extension - much faster than numpy

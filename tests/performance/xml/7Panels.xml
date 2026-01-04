@@ -1,0 +1,9 @@
+<root>
+    <panel thickness="0.25"/>
+    <panel width="2.347" thickness="0.25" rotate="-90" attach="0:1"/>
+    <panel width="1.522" thickness="0.25" rotate="90" attach="1:1"/>
+    <panel width="1.637" thickness="0.25" rotate="90" attach="2:1"/>
+    <panel width="4.296" thickness="0.25" rotate="90" attach="3:1"/>
+    <panel width="4.854" thickness="0.25" rotate="-225" attach="4:1"/>
+    <panel width="6.332" thickness="0.25" rotate="135" attach="5:1"/>
+</root>

@@ -3,10 +3,13 @@
 ## ⚠️ CRITICAL REMINDERS
 
 ### Temp Scripts
+
 **Always place temporary/debugging scripts in a `temp/` folder** - do NOT create them in the project root or src directories. This keeps the workspace clean and makes cleanup easy.
 
 ### XML in Command Line
+
 **NEVER pass Python code with embedded XML strings to the command line** (e.g., `python -c "xml = '<Panel>...'"`). This always fails due to shell escaping issues. Instead:
+
 - Write the code to a temp file and run it
 - Use the test fixtures
 - Load XML from a file
@@ -17,13 +20,6 @@
 
 GXML is a Python library for geometric XML layout, panel intersection solving, and geometry generation.
 
-### Core Pipeline (4 stages, in order)
-
-1. **IntersectionSolver** - Finds where panel centerlines meet (joints, T-junctions, crossings)
-2. **FaceSolver** - Determines face segmentation from intersection topology
-3. **BoundsSolver** - Computes trim/gap adjustments for precise geometry
-4. **GeometryBuilder** - Creates actual 3D geometry with proper mitering
-
 ### Key Concepts
 
 - **Panel** - A rectangular element with width, height, depth; has two faces (front/back) and a centerline
@@ -31,25 +27,7 @@ GXML is a Python library for geometric XML layout, panel intersection solving, a
 - **Face** - One side of a panel (front or back); faces get segmented by intersections
 - **Segment** - A portion of a panel face between intersection points
 - **Intersection** - Where panel centerlines meet; can be joints, T-junctions, or crossings
-- **Trim/Gap** - Adjustments at panel ends and intersections for proper fit
-
----
-
-## Project Structure
-
-```
-src/gxml/
-├── elements/          # Core element types (Panel, Point, Polygon, etc.)
-│   └── solvers/       # IntersectionSolver, FaceSolver, BoundsSolver, GeometryBuilder
-├── layouts/           # Layout computation
-├── mathutils/         # Math utilities (vectors, intersections, etc.)
-├── render_engines/    # Different rendering backends
-├── gxml_parser.py     # XML parsing
-├── gxml_engine.py     # Main engine
-└── gxml_types.py      # Type definitions
-```
-
----
+- **Trim/Gap** - Adjustments at panel ends and intersections for proper fit---
 
 ## Development
 
@@ -67,8 +45,32 @@ pytest --tb=short                # Shorter tracebacks
 
 - `tests/unit/` - Unit tests for individual components
 - `tests/integration/` - Integration tests for full pipeline
-- `tests/test_fixtures/` - Shared test utilities, mocks, and assertions
+- `tests/performance/` - Performance benchmarks (XML files in `xml/` subfolder)
+- `tests/test_fixtures/` - Shared test utilities, mocks, assertions, and profiling
 - `tests/conftest.py` - Pytest fixtures
+
+### Performance Testing
+
+**Always run the official performance test after making changes that could affect performance:**
+
+```bash
+# Quick regression check via pytest (recommended)
+pytest tests/performance/ -v
+
+# Detailed profiling with breakdown
+python tests/performance/test_perf_pipeline.py
+```
+
+This test runs the full end-to-end pipeline (parse → layout → render) on multiple test files (7, 16, 75, 200 panels) and compares CPU vs C extension backends.
+
+**Pytest tests will fail if performance regresses >20% from baseline** (e.g., 700ms baseline × 1.2 = 840ms max for 200 panels).
+
+Key metrics:
+- **7 panels**: ~3-5ms baseline
+- **16 panels**: ~8-15ms baseline  
+- **75 panels**: ~70-100ms baseline
+- **200 panels**: ~650-700ms baseline (C extension similar or slightly faster)
+- **200 panels, ~1200 intersections, ~10,800 polygons**
 
 ### Generating Integration Tests
 
@@ -81,22 +83,18 @@ echo '<Root>...</Root>' | python tests/generate_test_xml.py
 
 **When generating integration tests, add them directly to the relevant test file** (e.g., `tests/integration/test_integration_panel_intersections.py`) without showing the code in chat first.
 
-### Installing for Development
-
-```bash
-pip install -e ".[dev]"
-```
-
----
+```---
 
 ## Related Projects
 
 ### gxml-houdini
 
 The `gxml-houdini` package provides Houdini integration for GXML. It lives in a sibling folder and contains:
+
 - Custom render engines for Houdini
 - HDA (Houdini Digital Asset) files in `otls/`
 - Overrides for `gxml_engine.py` and `gxml_render.py`
+- Includes gxml as a submodule which can be ignored entirely unless we're doing houdini work.
 
 ---
 

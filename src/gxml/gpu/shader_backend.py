@@ -366,12 +366,14 @@ class WGPUBackend(ShaderBackend):
         self._device = None
         self._available = False
         self._intersection_pipeline = None
+        self._shader_module = None
         self._init_wgpu()
     
     def _init_wgpu(self):
         """Initialize wgpu device and compile shaders."""
         try:
             import wgpu
+            self._wgpu = wgpu
             
             # Request adapter and device
             adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
@@ -388,6 +390,13 @@ class WGPUBackend(ShaderBackend):
                 
                 # Create shader module
                 self._shader_module = self._device.create_shader_module(code=shader_source)
+                
+                # Create compute pipeline for intersection finding
+                self._intersection_pipeline = self._device.create_compute_pipeline(
+                    layout="auto",
+                    compute={"module": self._shader_module, "entry_point": "find_intersections"}
+                )
+                
                 self._available = True
             
         except ImportError:
@@ -409,12 +418,138 @@ class WGPUBackend(ShaderBackend):
         ends: np.ndarray,
         tolerance: float = 1e-6
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """WebGPU intersection finding."""
-        if not self._available:
+        """WebGPU intersection finding using GPU compute shader."""
+        if not self._available or self._intersection_pipeline is None:
             return CPUBackend().find_intersections(starts, ends, tolerance)
         
-        # TODO: Implement full WebGPU compute dispatch
-        return CPUBackend().find_intersections(starts, ends, tolerance)
+        try:
+            n = len(starts)
+            if n == 0:
+                return (
+                    np.array([], dtype=np.int32),
+                    np.array([], dtype=np.int32),
+                    np.array([], dtype=np.float32),
+                    np.array([], dtype=np.float32),
+                    np.zeros((0, 3), dtype=np.float32)
+                )
+            
+            # Max possible intersections: n*(n-1)/2
+            max_intersections = (n * (n - 1)) // 2
+            
+            # Prepare panel data with 16-byte alignment
+            # Panel struct: start(vec3f, 12 bytes) + pad(4) + end(vec3f, 12 bytes) + pad(4) = 32 bytes
+            panel_data = np.zeros((n, 8), dtype=np.float32)
+            panel_data[:, 0:3] = starts.astype(np.float32)
+            panel_data[:, 4:7] = ends.astype(np.float32)
+            
+            # Create GPU buffers
+            panels_buffer = self._device.create_buffer_with_data(
+                data=panel_data.tobytes(),
+                usage=self._wgpu.BufferUsage.STORAGE
+            )
+            
+            # Result buffer: panel_i(u32) + panel_j(u32) + t_i(f32) + t_j(f32) + position(vec3f) + valid(u32) = 32 bytes
+            results_size = max_intersections * 32
+            results_buffer = self._device.create_buffer(
+                size=max(results_size, 32),
+                usage=self._wgpu.BufferUsage.STORAGE | self._wgpu.BufferUsage.COPY_SRC
+            )
+            
+            # Counter buffer: single atomic u32
+            counter_buffer = self._device.create_buffer_with_data(
+                data=np.zeros(1, dtype=np.uint32).tobytes(),
+                usage=self._wgpu.BufferUsage.STORAGE | self._wgpu.BufferUsage.COPY_SRC
+            )
+            
+            # Uniforms buffer: num_panels(u32) + tolerance(f32) + pad(vec2f) = 16 bytes
+            uniforms = np.zeros(4, dtype=np.float32)
+            uniforms[0] = np.float32(n).view(np.float32)  # Cast to float for uniform buffer
+            uniforms[1] = tolerance
+            # Re-encode num_panels as uint32 in the first 4 bytes
+            uniforms_bytes = bytearray(16)
+            uniforms_bytes[0:4] = np.array([n], dtype=np.uint32).tobytes()
+            uniforms_bytes[4:8] = np.array([tolerance], dtype=np.float32).tobytes()
+            
+            uniforms_buffer = self._device.create_buffer_with_data(
+                data=bytes(uniforms_bytes),
+                usage=self._wgpu.BufferUsage.UNIFORM
+            )
+            
+            # Create bind group
+            bind_group = self._device.create_bind_group(
+                layout=self._intersection_pipeline.get_bind_group_layout(0),
+                entries=[
+                    {"binding": 0, "resource": {"buffer": panels_buffer}},
+                    {"binding": 1, "resource": {"buffer": results_buffer}},
+                    {"binding": 2, "resource": {"buffer": counter_buffer}},
+                    {"binding": 3, "resource": {"buffer": uniforms_buffer}},
+                ]
+            )
+            
+            # Run compute shader
+            command_encoder = self._device.create_command_encoder()
+            compute_pass = command_encoder.begin_compute_pass()
+            compute_pass.set_pipeline(self._intersection_pipeline)
+            compute_pass.set_bind_group(0, bind_group)
+            
+            # Dispatch with workgroup size (8, 8, 1)
+            workgroups_x = (n + 7) // 8
+            workgroups_y = (n + 7) // 8
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1)
+            compute_pass.end()
+            
+            # Read back counter
+            counter_staging = self._device.create_buffer(
+                size=4,
+                usage=self._wgpu.BufferUsage.MAP_READ | self._wgpu.BufferUsage.COPY_DST
+            )
+            command_encoder.copy_buffer_to_buffer(counter_buffer, 0, counter_staging, 0, 4)
+            
+            self._device.queue.submit([command_encoder.finish()])
+            
+            # Get count
+            counter_staging.map_sync(mode=self._wgpu.MapMode.READ)
+            count_data = counter_staging.read_mapped()
+            num_intersections = int(np.frombuffer(bytes(count_data), dtype=np.uint32)[0])
+            counter_staging.unmap()
+            
+            if num_intersections == 0:
+                return (
+                    np.array([], dtype=np.int32),
+                    np.array([], dtype=np.int32),
+                    np.array([], dtype=np.float32),
+                    np.array([], dtype=np.float32),
+                    np.zeros((0, 3), dtype=np.float32)
+                )
+            
+            # Read back results
+            results_staging = self._device.create_buffer(
+                size=num_intersections * 32,
+                usage=self._wgpu.BufferUsage.MAP_READ | self._wgpu.BufferUsage.COPY_DST
+            )
+            command_encoder2 = self._device.create_command_encoder()
+            command_encoder2.copy_buffer_to_buffer(results_buffer, 0, results_staging, 0, num_intersections * 32)
+            self._device.queue.submit([command_encoder2.finish()])
+            
+            results_staging.map_sync(mode=self._wgpu.MapMode.READ)
+            result_data = results_staging.read_mapped()
+            results_array = np.frombuffer(bytes(result_data), dtype=np.float32).reshape(-1, 8)
+            results_staging.unmap()
+            
+            # Parse results
+            # Each result: [panel_i as float, panel_j as float, t_i, t_j, pos_x, pos_y, pos_z, valid]
+            indices_i = results_array[:, 0].view(np.uint32).astype(np.int32)
+            indices_j = results_array[:, 1].view(np.uint32).astype(np.int32)
+            t_values_i = results_array[:, 2]
+            t_values_j = results_array[:, 3]
+            positions = results_array[:, 4:7]
+            
+            return (indices_i, indices_j, t_values_i, t_values_j, positions)
+            
+        except Exception as e:
+            # Fall back to CPU on any error
+            print(f"WebGPU compute error: {e}")
+            return CPUBackend().find_intersections(starts, ends, tolerance)
     
     def transform_points(
         self,
@@ -425,7 +560,7 @@ class WGPUBackend(ShaderBackend):
         if not self._available:
             return CPUBackend().transform_points(matrices, points)
         
-        # TODO: Implement WebGPU transform pipeline
+        # TODO: Implement WebGPU transform pipeline (for now, CPU is fast enough)
         return CPUBackend().transform_points(matrices, points)
     
     def compute_face_points(
@@ -442,7 +577,7 @@ class WGPUBackend(ShaderBackend):
                 matrices, half_thicknesses, t_coords, s_coords, face_sides
             )
         
-        # TODO: Implement WebGPU face point pipeline
+        # TODO: Implement WebGPU face point pipeline (for now, CPU is fast enough)
         return CPUBackend().compute_face_points(
             matrices, half_thicknesses, t_coords, s_coords, face_sides
         )

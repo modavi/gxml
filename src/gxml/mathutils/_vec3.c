@@ -16,6 +16,11 @@
 #include <structmember.h>
 #include <math.h>
 
+/* M_PI is not defined in MSVC by default */
+#ifndef M_PI
+    #define M_PI 3.14159265358979323846
+#endif
+
 /* SIMD Support Detection and Includes */
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
     #include <immintrin.h>
@@ -28,6 +33,14 @@
     #define USE_NEON 1
 #endif
 
+/* Cross-platform alignment macro */
+#if defined(_MSC_VER)
+    #define ALIGNED(x) __declspec(align(x))
+#elif defined(__GNUC__) || defined(__clang__)
+    #define ALIGNED(x) __attribute__((aligned(x)))
+#else
+    #define ALIGNED(x)
+#endif
 /* ============================================================================
  * Vec3 Type Definition
  * ============================================================================ */
@@ -328,13 +341,7 @@ static PyTypeObject Vec3Type = {
 
 typedef struct {
     PyObject_HEAD
-#if defined(USE_AVX)
-    __attribute__((aligned(32))) double m[16];  /* 32-byte aligned for AVX */
-#elif defined(USE_SSE) || defined(USE_NEON)
-    __attribute__((aligned(16))) double m[16];  /* 16-byte aligned for SSE/NEON */
-#else
     double m[16];  /* Row-major: m[row*4 + col] */
-#endif
 } Mat4Object;
 
 static PyTypeObject Mat4Type;  /* Forward declaration */
@@ -1757,6 +1764,81 @@ static PyObject *vec3_batch_bilinear_transform(PyObject *self, PyObject *args) {
 }
 
 
+/* create_transform_matrix_from_quad(points) - Create 4x4 transform from 4 quad corner points
+ * Points: [p0, p1, p2, p3] where p0=origin, p1=X-axis end, p2=top-right, p3=Y-axis end
+ * Returns tuple of tuples (4x4 matrix)
+ */
+static PyObject *vec3_create_transform_matrix_from_quad(PyObject *self, PyObject *args) {
+    PyObject *points_obj;
+    
+    if (!PyArg_ParseTuple(args, "O", &points_obj)) return NULL;
+    
+    if (!PySequence_Check(points_obj) || PySequence_Length(points_obj) != 4) {
+        PyErr_SetString(PyExc_ValueError, "points must be a sequence of 4 points");
+        return NULL;
+    }
+    
+    /* Extract 4 points */
+    double p0x, p0y, p0z, p1x, p1y, p1z, p2x, p2y, p2z, p3x, p3y, p3z;
+    
+    PyObject *pt = PySequence_GetItem(points_obj, 0);
+    if (!pt || !Vec3_extract(pt, &p0x, &p0y, &p0z)) { Py_XDECREF(pt); return NULL; }
+    Py_DECREF(pt);
+    
+    pt = PySequence_GetItem(points_obj, 1);
+    if (!pt || !Vec3_extract(pt, &p1x, &p1y, &p1z)) { Py_XDECREF(pt); return NULL; }
+    Py_DECREF(pt);
+    
+    pt = PySequence_GetItem(points_obj, 2);
+    if (!pt || !Vec3_extract(pt, &p2x, &p2y, &p2z)) { Py_XDECREF(pt); return NULL; }
+    Py_DECREF(pt);
+    
+    pt = PySequence_GetItem(points_obj, 3);
+    if (!pt || !Vec3_extract(pt, &p3x, &p3y, &p3z)) { Py_XDECREF(pt); return NULL; }
+    Py_DECREF(pt);
+    
+    /* Origin is p0 */
+    double origin_x = p0x, origin_y = p0y, origin_z = p0z;
+    
+    /* X-axis direction and scale: p1 - p0 */
+    double dx = p1x - p0x, dy = p1y - p0y, dz = p1z - p0z;
+    double xScale = sqrt(dx*dx + dy*dy + dz*dz);
+    double xAxis_x, xAxis_y, xAxis_z;
+    if (xScale > 1e-10) {
+        double inv = 1.0 / xScale;
+        xAxis_x = dx * inv; xAxis_y = dy * inv; xAxis_z = dz * inv;
+    } else {
+        xAxis_x = 1.0; xAxis_y = 0.0; xAxis_z = 0.0;
+        xScale = 0.0;
+    }
+    
+    /* Y-axis direction and scale: p3 - p0 */
+    dx = p3x - p0x; dy = p3y - p0y; dz = p3z - p0z;
+    double yScale = sqrt(dx*dx + dy*dy + dz*dz);
+    double yAxis_x, yAxis_y, yAxis_z;
+    if (yScale > 1e-10) {
+        double inv = 1.0 / yScale;
+        yAxis_x = dx * inv; yAxis_y = dy * inv; yAxis_z = dz * inv;
+    } else {
+        yAxis_x = 0.0; yAxis_y = 1.0; yAxis_z = 0.0;
+        yScale = 0.0;
+    }
+    
+    /* Z-axis: cross(xAxis, yAxis) */
+    double zAxis_x = xAxis_y * yAxis_z - xAxis_z * yAxis_y;
+    double zAxis_y = xAxis_z * yAxis_x - xAxis_x * yAxis_z;
+    double zAxis_z = xAxis_x * yAxis_y - xAxis_y * yAxis_x;
+    
+    /* Build row-major 4x4 matrix (for row-vector multiplication) */
+    return Py_BuildValue("((dddd)(dddd)(dddd)(dddd))",
+        xAxis_x * xScale, xAxis_y * xScale, xAxis_z * xScale, 0.0,
+        yAxis_x * yScale, yAxis_y * yScale, yAxis_z * yScale, 0.0,
+        zAxis_x,          zAxis_y,          zAxis_z,          0.0,
+        origin_x,         origin_y,         origin_z,         1.0
+    );
+}
+
+
 static PyMethodDef vec3_methods[] = {
     {"transform_point", vec3_transform_point, METH_VARARGS, 
      "Transform a 3D point by a 4x4 matrix"},
@@ -1792,6 +1874,8 @@ static PyMethodDef vec3_methods[] = {
      "Transform multiple points by a 4x4 matrix at once"},
     {"batch_bilinear_transform", vec3_batch_bilinear_transform, METH_VARARGS,
      "Bilinear interpolate + transform multiple points in one call"},
+    {"create_transform_matrix_from_quad", vec3_create_transform_matrix_from_quad, METH_VARARGS,
+     "Create 4x4 transform matrix from 4 quad corner points"},
     {NULL, NULL, 0, NULL}
 };
 
