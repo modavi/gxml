@@ -46,3 +46,6 @@ htmlcov/
 .mypy_cache/
 .pytype/
 .pyre/
+
+# Temp files
+temp/
