@@ -4,27 +4,48 @@ GXML Engine - Main entry point for processing GXML content.
 This module provides the primary API for parsing, laying out, and rendering
 GXML (Geometric XML) content.
 
+Mental Model (analogous to HTML/DOM):
+    
+    HTML                    GXML
+    ----                    ----
+    HTML string      →      GXML string (markup)
+    DOM              →      GOM (Geometry Object Model)
+    Rendered page    →      Rendered mesh (binary for WebGL)
+    
+    The pipeline mirrors web browsers:
+    1. Parse: GXML string → GOM (element tree with panels, groups, etc.)
+    2. Layout: Compute positions, intersections, face segmentation, geometry
+    3. Render: GOM → mesh output (packed binary data for GPU)
+    
+    Just as you can manipulate the DOM after parsing HTML, you can inspect
+    and traverse the GOM after parsing GXML. The GOM contains the full
+    geometric state: panel transforms, intersection points, face segments,
+    and computed polygon geometry.
+
 Usage:
     from gxml import run, GXMLConfig
     
-    # Simple usage with defaults
+    # Simple usage - returns both GOM and rendered mesh
     result = run(xml_string)
+    gom = result.gom    # The Geometry Object Model (element tree)
+    mesh = result.mesh  # Rendered mesh (bytes for WebGL)
     
     # With configuration
-    config = GXMLConfig(backend='c', output_format='binary')
+    config = GXMLConfig(backend='c')
     result = run(xml_string, config=config)
     
-    # With individual options
-    result = run(xml_string, backend='c', output_format='binary')
+    # Custom mesh render context
+    from render_engines.binary_render_context import BinaryRenderContext
+    ctx = BinaryRenderContext(shared_vertices=True, include_endpoints=True)
+    result = run(xml_string, mesh_render_context=ctx)
     
-    # Binary with indexed vertices (GPU efficient)
-    result = run(xml_string, output_format='binary', indexed=True)
+    # Skip mesh rendering - just get the GOM
+    result = run(xml_string, mesh_render_context=False)
+    gom = result.gom  # Full GOM with all computed geometry
     
-    # With profiling - shows timing for all instrumented code sections
+    # With profiling
     result = run(xml_string, profile=True)
     print(result.timings)
-    # {'parse': {'count': 1, 'total_ms': 1.2, ...}, 
-    #  'on_post_layout': {'count': 200, 'total_ms': 650.0, ...}, ...}
 """
 
 from dataclasses import dataclass, field
@@ -48,7 +69,6 @@ from gxml_profile import (
 # =============================================================================
 
 Backend = Literal['cpu', 'c', 'taichi', 'gpu']
-OutputFormat = Literal['json', 'binary', 'indexed', 'dict', 'none']  # 'indexed' kept for backwards compat
 
 
 @dataclass
@@ -63,33 +83,21 @@ class GXMLConfig:
             - 'taichi': GPU-accelerated (requires Taichi)
             - 'gpu': Legacy GPU mode
         
-        output_format: How to output the rendered geometry.
-            - 'json': Return JSON-serializable dict with full panel metadata
-            - 'binary': Return packed binary data (for WebGL/Three.js)
-            - 'dict': Return minimal geometry dict (simple format)
-            - 'none': Skip rendering, return parsed/laid-out tree only
-        
-        indexed: If True, use shared vertices with deduplication (GPU efficient).
-                 If False, each polygon has its own vertices (default).
-                 Only applies to 'binary' output_format.
+        mesh_render_context: Render context for mesh output. Can be:
+            - None (default): Use default BinaryRenderContext
+            - A render context instance (e.g., BinaryRenderContext with options)
+            - False: Skip mesh rendering entirely
         
         profile: Enable timing profiling of pipeline stages.
             When True, returns timing data from all instrumented code sections.
             Markers are placed throughout the codebase using push_perf_marker/pop_perf_marker.
         
         validate: Validate XML structure before processing.
-        
-        render_context: Custom render context instance (overrides output_format).
     """
     backend: Backend = 'cpu'
-    output_format: OutputFormat = 'dict'
-    indexed: bool = False
+    mesh_render_context: Any = None
     profile: bool = False
     validate: bool = False
-    render_context: Optional[Any] = None
-    
-    # Additional options that can be expanded
-    options: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -98,66 +106,32 @@ class GXMLResult:
     Result from running the GXML pipeline.
     
     Attributes:
-        root: The parsed and laid-out GXML element tree.
-        output: The rendered output (format depends on config.output_format).
-        timings: Timing data from profiled code sections (if config.profile=True).
+        gom: The Geometry Object Model - the parsed and laid-out element tree.
+            Analogous to the DOM in web browsers. Contains panels, groups,
+            and all computed geometric state (transforms, intersections,
+            face segments, polygon geometry).
+        mesh: The rendered mesh (bytes from BinaryRenderContext).
+            Analogous to the rendered page in a browser. Ready for GPU upload.
+            None if mesh_render_context=False.
+        timings: Timing data from profiled code sections (if profile=True).
             Each key is a marker name, value contains count, total_ms, avg_ms, min_ms, max_ms.
-        stats: Statistics about the processed content.
+        stats: Statistics about the processed content (panel_count, intersection_count, etc.).
     """
-    root: Any
-    output: Any = None
+    gom: Any  # Geometry Object Model (element tree)
+    mesh: Any = None  # Rendered mesh (bytes)
     timings: Optional[Dict[str, Any]] = None
     stats: Optional[Dict[str, int]] = None
     
-    def get_web_timings(self) -> Dict[str, float]:
-        """
-        Get timing data formatted for web responses.
-        
-        Returns a flat dict with timing values in milliseconds, suitable for
-        HTTP headers or JSON responses. Maps internal marker names to 
-        web-friendly names.
-        
-        Returns:
-            Dict with keys: parse, measure, prelayout, layout, postlayout,
-            render, intersection, face, geometry, fastmesh (all in ms)
-        """
-        return format_timings_for_web(self.timings)
-
-
-def format_timings_for_web(profile_results: Optional[Dict[str, Any]]) -> Dict[str, float]:
-    """
-    Format profile results into web-friendly timing dict.
+    # Backwards compatibility aliases
+    @property
+    def root(self) -> Any:
+        """Alias for gom (backwards compatibility)."""
+        return self.gom
     
-    This is the shared timing extraction logic used by both app.py (FastAPI)
-    and gxml_server.py (Electron IPC).
-    
-    Args:
-        profile_results: Raw timing dict from get_profile_results()
-        
-    Returns:
-        Dict with web-friendly timing names and values in milliseconds
-    """
-    if not profile_results:
-        return {}
-    
-    def ms(name: str) -> float:
-        return profile_results.get(name, {}).get('total_ms', 0.0)
-    
-    return {
-        'parse': ms('parse'),
-        'measure': ms('measure_pass'),
-        'prelayout': ms('pre_layout_pass'),
-        'layout': ms('layout_pass'),
-        'postlayout': ms('post_layout_pass'),
-        'render': ms('render'),
-        # Solver breakdown (nested within post-layout, or standalone for indexed)
-        'intersection': ms('intersection_solver'),
-        'face': ms('face_solver'),
-        'geometry': ms('geometry_builder'),
-        # FastMeshBuilder (indexed pipeline only)
-        'fastmesh': ms('fast_mesh_builder'),
-        'serialize': ms('serialize'),
-    }
+    @property
+    def output(self) -> Any:
+        """Alias for mesh (backwards compatibility)."""
+        return self.mesh
 
 
 # =============================================================================
@@ -170,41 +144,19 @@ def _set_backend(backend: Backend) -> None:
     set_solver_backend(backend)
 
 
-def _get_render_context(config: GXMLConfig, node: Any = None):
-    """Get or create the appropriate render context."""
-    # Custom context takes priority
-    if config.render_context is not None:
-        return config.render_context
-    
-    if config.output_format == 'houdini':
-        # Houdini render context is provided by gxml-houdini plugin
-        raise ValueError(
-            "output_format='houdini' requires gxml-houdini plugin. "
-            "Pass a custom render_context instead."
-        )
-    
-    elif config.output_format == 'json':
-        from render_engines.json_render_context import JSONRenderContext
-        return JSONRenderContext()
-    
-    elif config.output_format == 'binary':
+def _get_render_context(config: GXMLConfig):
+    """Get the render context, creating default if needed."""
+    if config.mesh_render_context is None:
+        # Default: BinaryRenderContext with default options
         from render_engines.binary_render_context import BinaryRenderContext
-        return BinaryRenderContext(indexed=config.indexed)
+        return BinaryRenderContext()
     
-    elif config.output_format == 'dict':
-        from render_engines.dict_render_context import DictRenderContext
-        return DictRenderContext()
-    
-    elif config.output_format == 'indexed':
-        # Backwards compatibility: 'indexed' format = binary with indexed=True
-        from render_engines.binary_render_context import BinaryRenderContext
-        return BinaryRenderContext(indexed=True)
-    
-    elif config.output_format == 'none':
+    if config.mesh_render_context is False:
+        # Explicitly skip rendering
         return None
     
-    else:
-        raise ValueError(f"Unknown output_format: {config.output_format}")
+    # User provided a render context instance
+    return config.mesh_render_context
 
 
 def _collect_stats(root) -> Dict[str, int]:
@@ -236,60 +188,66 @@ def _collect_stats(root) -> Dict[str, int]:
 # Main API
 # =============================================================================
 
+# Sentinel for "argument not provided" in run() kwargs
+_NOT_PROVIDED = object()
+
+
 def run(
     xml: str,
     config: Optional[GXMLConfig] = None,
-    node: Any = None,
     *,
     # Convenience kwargs that override config
     backend: Optional[Backend] = None,
-    output_format: Optional[OutputFormat] = None,
-    indexed: Optional[bool] = None,
+    mesh_render_context: Any = _NOT_PROVIDED,
     profile: Optional[bool] = None,
 ) -> GXMLResult:
     """
     Run the GXML processing pipeline.
     
     This is the main entry point for processing GXML content. It handles:
-    1. Parsing XML into element tree
-    2. Layout computation (positioning, intersections, geometry)
-    3. Rendering to the specified output format
+    1. Parse: GXML string → GOM (Geometry Object Model)
+    2. Layout: Compute positions, intersections, geometry on the GOM
+    3. Render: GOM → mesh output (binary data for GPU)
     
     Args:
         xml: The GXML string to process.
         config: Configuration options (GXMLConfig instance).
-        node: Houdini node for rendering (required if output_format='houdini').
         backend: Override config.backend.
-        output_format: Override config.output_format.
-        indexed: Override config.indexed. If True, use shared vertices with
-                 deduplication (GPU efficient). Only applies to 'binary' format.
+        mesh_render_context: Override config.mesh_render_context.
+            - None (default): Use default BinaryRenderContext
+            - A render context instance: Use that context
+            - False: Skip mesh rendering (just build GOM)
         profile: Override config.profile.
     
     Returns:
-        GXMLResult containing the processed tree and output.
-        
-        When profile=True, result.timings contains timing data from all 
-        instrumented code sections (those using push_perf_marker/pop_perf_marker).
-        Each marker has: count, total_ms, avg_ms, min_ms, max_ms
+        GXMLResult containing:
+        - gom: The Geometry Object Model (element tree with computed geometry)
+        - mesh: Rendered mesh bytes (or None if mesh_render_context=False)
+        - timings: Profile data (if profile=True)
+        - stats: Panel/intersection counts
     
     Examples:
-        # Basic usage
+        # Basic usage - get both GOM and mesh
         result = run('<root><panel/></root>')
+        gom = result.gom    # Element tree
+        mesh = result.mesh  # Binary mesh data
         
         # With backend selection
         result = run(xml, backend='c')
         
-        # Binary output with indexed vertices (GPU efficient)
-        result = run(xml, output_format='binary', indexed=True)
+        # Custom render context
+        from render_engines.binary_render_context import BinaryRenderContext
+        ctx = BinaryRenderContext(shared_vertices=True)
+        result = run(xml, mesh_render_context=ctx)
         
-        # With full config
-        config = GXMLConfig(backend='c', output_format='binary', indexed=True)
-        result = run(xml, config=config)
+        # Just get the GOM, skip mesh rendering
+        result = run(xml, mesh_render_context=False)
+        for panel in result.gom.iter_panels():
+            print(panel.world_transform)
         
         # With profiling
         result = run(xml, profile=True)
-        for name, stats in result.timings.items():
-            print(f"{name}: {stats['total_ms']:.1f}ms ({stats['count']} calls)")
+        print(result.timings)
     """
     # Build effective config
     if config is None:
@@ -298,10 +256,8 @@ def run(
     # Apply overrides
     if backend is not None:
         config.backend = backend
-    if output_format is not None:
-        config.output_format = output_format
-    if indexed is not None:
-        config.indexed = indexed
+    if mesh_render_context is not _NOT_PROVIDED:
+        config.mesh_render_context = mesh_render_context
     if profile is not None:
         config.profile = profile
     
@@ -314,36 +270,36 @@ def run(
         # Set backend
         _set_backend(config.backend)
         
-        # Parse
+        # Parse: GXML string → GOM
         push_perf_marker("parse")
-        root = GXMLParser.parse(xml)
+        gom = GXMLParser.parse(xml)
         pop_perf_marker()
         
-        # Standard pipeline: full layout + render
+        # Layout: compute positions, intersections, geometry
         push_perf_marker("layout")
-        GXMLLayout.layout(root)
+        GXMLLayout.layout(gom)
         pop_perf_marker()
         
-        # Render
-        output = None
-        render_ctx = _get_render_context(config, node)
+        # Render: GOM → mesh
+        mesh = None
+        render_ctx = _get_render_context(config)
         
         if render_ctx is not None:
             push_perf_marker("render")
-            GXMLRender.render(root, render_ctx)
+            GXMLRender.render(gom, render_ctx)
             pop_perf_marker()
             
-            # Get output from context
+            # Get mesh from context
             if hasattr(render_ctx, 'get_output'):
-                output = render_ctx.get_output()
+                mesh = render_ctx.get_output()
         
         # Collect timings and stats
         timings = get_profile_results() if config.profile else None
-        stats = _collect_stats(root)
+        stats = _collect_stats(gom)
         
         return GXMLResult(
-            root=root,
-            output=output,
+            gom=gom,
+            mesh=mesh,
             timings=timings,
             stats=stats,
         )

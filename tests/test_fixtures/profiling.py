@@ -185,7 +185,7 @@ def collect_panels(element) -> list:
     return panels
 
 
-def run_pipeline(xml_content: str, backend: str = 'cpu', output_format: str = 'dict') -> TimingResult:
+def run_pipeline(xml_content: str, backend: str = 'cpu', shared_vertices: bool = False) -> TimingResult:
     """
     Run the full GXML pipeline end-to-end using gxml_engine.
     
@@ -195,7 +195,7 @@ def run_pipeline(xml_content: str, backend: str = 'cpu', output_format: str = 'd
     Args:
         xml_content: The XML string to process
         backend: Solver backend ('cpu', 'c', or 'taichi')
-        output_format: Output format ('dict', 'binary', 'indexed', 'json', 'none')
+        shared_vertices: Whether to use shared vertices mode in render context
     
     Returns:
         TimingResult with detailed timing breakdown including:
@@ -204,10 +204,12 @@ def run_pipeline(xml_content: str, backend: str = 'cpu', output_format: str = 'd
         - Solvers: intersection, face_solver, geometry
     """
     from gxml_engine import run, GXMLConfig
+    from render_engines.binary_render_context import BinaryRenderContext
     
+    render_ctx = BinaryRenderContext(shared_vertices=shared_vertices)
     config = GXMLConfig(
         backend=backend,
-        output_format=output_format,
+        mesh_render_context=render_ctx,
         profile=True,
     )
     
@@ -272,7 +274,7 @@ def run_benchmark(
     backend: str = 'cpu',
     warmup: int = 1,
     iterations: int = 3,
-    output_format: str = 'dict',
+    shared_vertices: bool = False,
 ) -> BenchmarkResult:
     """
     Run a full benchmark with warmup and multiple iterations.
@@ -282,19 +284,19 @@ def run_benchmark(
         backend: Solver backend
         warmup: Number of warmup runs
         iterations: Number of timed runs
-        output_format: Output format ('dict', 'binary', 'indexed', etc.)
+        shared_vertices: Whether to use shared vertices mode
     
     Returns:
         BenchmarkResult with aggregated statistics
     """
     # Warmup
     for _ in range(warmup):
-        run_pipeline(xml_content, backend, output_format)
+        run_pipeline(xml_content, backend, shared_vertices)
     
     # Timed runs
     results = []
     for _ in range(iterations):
-        results.append(run_pipeline(xml_content, backend, output_format))
+        results.append(run_pipeline(xml_content, backend, shared_vertices))
     
     times = [r.total_ms for r in results]
     

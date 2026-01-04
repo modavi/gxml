@@ -5,7 +5,7 @@ This render context outputs geometry as packed binary data that can be
 loaded directly into WebGL/Three.js Float32Arrays without JSON parsing.
 
 Supports configurable features via flags:
-- indexed: Use shared vertices with deduplication (GPU efficient)
+- shared_vertices: Use shared/deduplicated vertices (GPU efficient)
 - include_colors: Include per-polygon RGB colors
 - include_endpoints: Include panel start/end points
 
@@ -13,13 +13,13 @@ Binary Format v4:
     Header (28 bytes):
         - Magic: 4 bytes "GXML"
         - Version: uint32 (4)
-        - Flags: uint32 (bit 0 = indexed, bit 1 = colors, bit 2 = endpoints)
+        - Flags: uint32 (bit 0 = shared_vertices, bit 1 = colors, bit 2 = endpoints)
         - Vertex count: uint32
-        - Index count: uint32 (0 if not indexed)
+        - Index count: uint32 (0 if not shared_vertices)
         - Polygon count: uint32
         - Reserved: uint32 (for future use)
     
-    If indexed mode (FLAG_INDEXED):
+    If shared_vertices mode (FLAG_SHARED_VERTICES):
         Vertices: vertex_count * 3 * float32
         Indices: index_count * uint32 (triangles)
         For each polygon:
@@ -30,7 +30,7 @@ Binary Format v4:
             - End point: 3x float32 (only if FLAG_ENDPOINTS)
             - Panel ID: variable (UTF-8, padded to 4-byte alignment)
     
-    If per-polygon mode (not indexed):
+    If per-face mode (not shared_vertices):
         For each polygon:
             - ID length: uint16
             - Vertex count: uint16
@@ -65,8 +65,8 @@ class BinaryRenderContext(BaseRenderContext):
     Optimized for direct consumption by WebGL/Three.js without JSON parsing.
     
     Args:
-        indexed: If True, use shared vertices with deduplication (GPU efficient).
-                 If False, each polygon has its own vertices (simpler, per-panel ops).
+        shared_vertices: If True, deduplicate/share vertices across faces (GPU efficient).
+                         If False, each face gets its own unique vertices (default).
         include_colors: If True, include per-polygon RGB colors in output.
         include_endpoints: If True, include panel start/end points in output.
         color_palette: List of hex colors to cycle through for panels.
@@ -75,8 +75,8 @@ class BinaryRenderContext(BaseRenderContext):
         # Simple mesh output (default)
         ctx = BinaryRenderContext()
         
-        # GPU-efficient indexed mesh with colors
-        ctx = BinaryRenderContext(indexed=True, include_colors=True)
+        # GPU-efficient shared vertex mesh with colors
+        ctx = BinaryRenderContext(shared_vertices=True, include_colors=True)
         
         # Full output with endpoints for visualization
         ctx = BinaryRenderContext(include_colors=True, include_endpoints=True)
@@ -86,7 +86,7 @@ class BinaryRenderContext(BaseRenderContext):
     VERSION = 4
     
     # Flag bits
-    FLAG_INDEXED = 0x01
+    FLAG_SHARED_VERTICES = 0x01
     FLAG_COLORS = 0x02
     FLAG_ENDPOINTS = 0x04
     
@@ -101,12 +101,12 @@ class BinaryRenderContext(BaseRenderContext):
     
     def __init__(
         self, 
-        indexed: bool = False, 
+        shared_vertices: bool = False, 
         include_colors: bool = True,
         include_endpoints: bool = False,
         color_palette=None
     ):
-        self.indexed = indexed
+        self.shared_vertices = shared_vertices
         self.include_colors = include_colors
         self.include_endpoints = include_endpoints
         self._color_palette = color_palette or self.DEFAULT_COLOR_PALETTE
@@ -202,9 +202,9 @@ class BinaryRenderContext(BaseRenderContext):
         start_point = self._panel_data.get('startPoint')
         end_point = self._panel_data.get('endPoint')
         
-        if self.indexed:
-            # Indexed mode: deduplicate vertices and add triangles
-            push_perf_marker('indexed_vertex_dedup')
+        if self.shared_vertices:
+            # Shared vertices mode: deduplicate vertices and add triangles
+            push_perf_marker('shared_vertex_dedup')
             indices = [self._get_or_create_vertex(*v) for v in verts]
             pop_perf_marker()
             
@@ -243,15 +243,15 @@ class BinaryRenderContext(BaseRenderContext):
         
         # Build flags
         flags = 0
-        if self.indexed:
-            flags |= self.FLAG_INDEXED
+        if self.shared_vertices:
+            flags |= self.FLAG_SHARED_VERTICES
         if self.include_colors:
             flags |= self.FLAG_COLORS
         if self.include_endpoints:
             flags |= self.FLAG_ENDPOINTS
         
         # Calculate counts
-        if self.indexed:
+        if self.shared_vertices:
             vertex_count = len(self._vertices)
             index_count = len(self._indices)
         else:
@@ -270,15 +270,15 @@ class BinaryRenderContext(BaseRenderContext):
         )
         parts.append(header)
         
-        if self.indexed:
-            self._write_indexed_data(parts)
+        if self.shared_vertices:
+            self._write_shared_vertex_data(parts)
         else:
-            self._write_per_polygon_data(parts)
+            self._write_per_face_data(parts)
         
         return b''.join(parts)
     
-    def _write_indexed_data(self, parts: list):
-        """Write indexed mode data."""
+    def _write_shared_vertex_data(self, parts: list):
+        """Write shared vertices mode data."""
         # Vertices (float32 * 3 per vertex)
         if self._vertices:
             vertices_array = np.array(self._vertices, dtype=np.float32)
@@ -319,8 +319,8 @@ class BinaryRenderContext(BaseRenderContext):
             if padding:
                 parts.append(b'\x00' * padding)
     
-    def _write_per_polygon_data(self, parts: list):
-        """Write per-polygon mode data."""
+    def _write_per_face_data(self, parts: list):
+        """Write per-face mode data."""
         for panel_id, color_rgb, verts, start_point, end_point, _ in self._polygons:
             id_bytes = panel_id.encode('utf-8')
             vertex_count = len(verts) if verts else 0
@@ -361,9 +361,9 @@ class BinaryRenderContext(BaseRenderContext):
     
     def get_stats(self) -> dict:
         """Get statistics about the mesh."""
-        if self.indexed:
+        if self.shared_vertices:
             return {
-                'indexed': True,
+                'shared_vertices': True,
                 'vertex_count': len(self._vertices),
                 'index_count': len(self._indices),
                 'triangle_count': len(self._indices) // 3,
@@ -372,7 +372,7 @@ class BinaryRenderContext(BaseRenderContext):
         else:
             total_verts = sum(len(verts) for _, _, verts, _, _, _ in self._polygons if verts)
             return {
-                'indexed': False,
+                'shared_vertices': False,
                 'vertex_count': total_verts,
                 'polygon_count': len(self._polygons),
             }

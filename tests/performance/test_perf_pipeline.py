@@ -172,66 +172,65 @@ class TestPipelinePerformance:
 
 class TestOutputFormatPerformance:
     """
-    Performance tests comparing different output formats.
+    Performance tests comparing different render context options.
     
-    Tests indexed mode (GXMF) vs binary mode to measure the efficiency
+    Tests shared_vertices mode vs per-face vertices to measure the efficiency
     of vertex deduplication and indexed mesh generation.
     """
     
     @perf_xfail
-    def test_indexed_format_200panels(self):
-        """Test indexed output format on 200 panels."""
+    def test_shared_vertices_200panels(self):
+        """Test shared_vertices output on 200 panels."""
         xml_content = load_xml("200Panels.xml")
-        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, output_format='indexed')
-        # Indexed mode baseline - should be comparable to dict mode
-        assert_performance(result, 800, REGRESSION_THRESHOLD, "200 panels (indexed)")
+        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=True)
+        # Shared vertices mode baseline
+        assert_performance(result, 800, REGRESSION_THRESHOLD, "200 panels (shared_vertices)")
     
     @perf_xfail
-    def test_binary_format_200panels(self):
-        """Test binary output format on 200 panels."""
+    def test_per_face_vertices_200panels(self):
+        """Test per-face vertices output on 200 panels."""
         xml_content = load_xml("200Panels.xml")
-        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, output_format='binary')
-        # Binary mode baseline
-        assert_performance(result, 800, REGRESSION_THRESHOLD, "200 panels (binary)")
+        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=False)
+        # Per-face vertices mode baseline
+        assert_performance(result, 800, REGRESSION_THRESHOLD, "200 panels (per-face)")
     
     @perf_xfail
-    def test_indexed_not_slower_than_binary(self):
-        """Ensure indexed format is not significantly slower than binary."""
+    def test_shared_vertices_not_slower_than_per_face(self):
+        """Ensure shared_vertices mode is not significantly slower than per-face vertices."""
         xml_content = load_xml("200Panels.xml")
         
-        binary_result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, output_format='binary')
-        indexed_result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, output_format='indexed')
+        per_face_result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=False)
+        shared_result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=True)
         
-        # Indexed should not be more than 30% slower than binary
-        # (vertex deduplication has some overhead but should be reasonable)
+        # Shared vertices should not be more than 30% slower
         max_ratio = 1.3
-        ratio = indexed_result.median_ms / binary_result.median_ms
+        ratio = shared_result.median_ms / per_face_result.median_ms
 
         assert ratio < max_ratio, (
-            f"Indexed format is significantly slower than binary!\n"
-            f"  Binary time:  {binary_result.median_ms:.1f}ms\n"
-            f"  Indexed time: {indexed_result.median_ms:.1f}ms\n"
-            f"  Ratio:        {ratio:.2f}x (max allowed: {max_ratio}x)"
+            f"Shared vertices mode is significantly slower!\n"
+            f"  Per-face time:      {per_face_result.median_ms:.1f}ms\n"
+            f"  Shared verts time:  {shared_result.median_ms:.1f}ms\n"
+            f"  Ratio:              {ratio:.2f}x (max allowed: {max_ratio}x)"
         )
     
     @perf_xfail
-    def test_indexed_with_c_extension(self):
-        """Test indexed format with C extension backend."""
+    def test_shared_vertices_with_c_extension(self):
+        """Test shared_vertices mode with C extension backend."""
         if not is_c_available():
             pytest.skip("C extension not available")
         
         xml_content = load_xml("200Panels.xml")
-        result = run_benchmark(xml_content, 'c', WARMUP_RUNS, ITERATIONS, output_format='indexed')
-        assert_performance(result, 800, REGRESSION_THRESHOLD, "200 panels (indexed + C)")
+        result = run_benchmark(xml_content, 'c', WARMUP_RUNS, ITERATIONS, shared_vertices=True)
+        
+        assert result.median_ms < 800 * REGRESSION_THRESHOLD, f"200 panels (shared_vertices + C): {result.median_ms:.1f}ms exceeds threshold"
     
     @perf_xfail
-    @pytest.mark.parametrize("output_format", ['dict', 'binary', 'indexed', 'json'])
-    def test_output_format_75panels(self, output_format):
-        """Test all output formats on 75 panels."""
+    def test_shared_vertices_75panels(self):
+        """Test shared_vertices output on 75 panels."""
         xml_content = load_xml("75Panels.xml")
-        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, output_format=output_format)
-        # All formats should complete within reasonable time
-        assert_performance(result, 400, REGRESSION_THRESHOLD, f"75 panels ({output_format})")
+        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=True)
+        # Should complete within reasonable time
+        assert_performance(result, 400, REGRESSION_THRESHOLD, "75 panels (shared_vertices)")
 
 
 # =============================================================================
