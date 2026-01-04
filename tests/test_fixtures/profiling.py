@@ -185,7 +185,7 @@ def collect_panels(element) -> list:
     return panels
 
 
-def run_pipeline(xml_content: str, backend: str = 'cpu') -> TimingResult:
+def run_pipeline(xml_content: str, backend: str = 'cpu', output_format: str = 'dict') -> TimingResult:
     """
     Run the full GXML pipeline end-to-end using gxml_engine.
     
@@ -195,6 +195,7 @@ def run_pipeline(xml_content: str, backend: str = 'cpu') -> TimingResult:
     Args:
         xml_content: The XML string to process
         backend: Solver backend ('cpu', 'c', or 'taichi')
+        output_format: Output format ('dict', 'binary', 'indexed', 'json', 'none')
     
     Returns:
         TimingResult with detailed timing breakdown including:
@@ -206,7 +207,7 @@ def run_pipeline(xml_content: str, backend: str = 'cpu') -> TimingResult:
     
     config = GXMLConfig(
         backend=backend,
-        output_format='dict',
+        output_format=output_format,
         profile=True,
     )
     
@@ -249,8 +250,8 @@ def run_pipeline(xml_content: str, backend: str = 'cpu') -> TimingResult:
         result.intersection_count = gxml_result.stats.get('intersection_count', 0)
         result.polygon_count = gxml_result.stats.get('polygon_count', 0)
     
-    # Count polygons from output if available
-    if gxml_result.output and 'polygons' in gxml_result.output:
+    # Count polygons from output if available (only for dict format)
+    if gxml_result.output and isinstance(gxml_result.output, dict) and 'polygons' in gxml_result.output:
         result.polygon_count = len(gxml_result.output['polygons'])
         result.vertex_count = sum(
             len(poly.get('points', [])) 
@@ -270,7 +271,8 @@ def run_benchmark(
     xml_content: str,
     backend: str = 'cpu',
     warmup: int = 1,
-    iterations: int = 3
+    iterations: int = 3,
+    output_format: str = 'dict',
 ) -> BenchmarkResult:
     """
     Run a full benchmark with warmup and multiple iterations.
@@ -280,17 +282,19 @@ def run_benchmark(
         backend: Solver backend
         warmup: Number of warmup runs
         iterations: Number of timed runs
+        output_format: Output format ('dict', 'binary', 'indexed', etc.)
     
     Returns:
         BenchmarkResult with aggregated statistics
     """
     # Warmup
-    run_warmup(xml_content, backend, warmup)
+    for _ in range(warmup):
+        run_pipeline(xml_content, backend, output_format)
     
     # Timed runs
     results = []
     for _ in range(iterations):
-        results.append(run_pipeline(xml_content, backend))
+        results.append(run_pipeline(xml_content, backend, output_format))
     
     times = [r.total_ms for r in results]
     

@@ -5,17 +5,20 @@ This module provides the primary API for parsing, laying out, and rendering
 GXML (Geometric XML) content.
 
 Usage:
-    from gxml_engine import run, GXMLConfig
+    from gxml import run, GXMLConfig
     
     # Simple usage with defaults
     result = run(xml_string)
     
     # With configuration
-    config = GXMLConfig(backend='c', output_format='json')
+    config = GXMLConfig(backend='c', output_format='binary')
     result = run(xml_string, config=config)
     
     # With individual options
-    result = run(xml_string, backend='c', output_format='json')
+    result = run(xml_string, backend='c', output_format='binary')
+    
+    # Binary with indexed vertices (GPU efficient)
+    result = run(xml_string, output_format='binary', indexed=True)
     
     # With profiling - shows timing for all instrumented code sections
     result = run(xml_string, profile=True)
@@ -45,7 +48,7 @@ from gxml_profile import (
 # =============================================================================
 
 Backend = Literal['cpu', 'c', 'taichi', 'gpu']
-OutputFormat = Literal['json', 'binary', 'indexed', 'dict', 'none']
+OutputFormat = Literal['json', 'binary', 'indexed', 'dict', 'none']  # 'indexed' kept for backwards compat
 
 
 @dataclass
@@ -62,10 +65,13 @@ class GXMLConfig:
         
         output_format: How to output the rendered geometry.
             - 'json': Return JSON-serializable dict with full panel metadata
-            - 'binary': Return packed binary data (for WebGL/Three.js) - per-panel polygons
-            - 'indexed': Return indexed mesh data (GXMF format) - shared vertices + triangle indices
+            - 'binary': Return packed binary data (for WebGL/Three.js)
             - 'dict': Return minimal geometry dict (simple format)
             - 'none': Skip rendering, return parsed/laid-out tree only
+        
+        indexed: If True, use shared vertices with deduplication (GPU efficient).
+                 If False, each polygon has its own vertices (default).
+                 Only applies to 'binary' output_format.
         
         profile: Enable timing profiling of pipeline stages.
             When True, returns timing data from all instrumented code sections.
@@ -77,6 +83,7 @@ class GXMLConfig:
     """
     backend: Backend = 'cpu'
     output_format: OutputFormat = 'dict'
+    indexed: bool = False
     profile: bool = False
     validate: bool = False
     render_context: Optional[Any] = None
@@ -182,15 +189,16 @@ def _get_render_context(config: GXMLConfig, node: Any = None):
     
     elif config.output_format == 'binary':
         from render_engines.binary_render_context import BinaryRenderContext
-        return BinaryRenderContext()
+        return BinaryRenderContext(indexed=config.indexed)
     
     elif config.output_format == 'dict':
         from render_engines.dict_render_context import DictRenderContext
         return DictRenderContext()
     
     elif config.output_format == 'indexed':
-        from render_engines.indexed_render_context import IndexedRenderContext
-        return IndexedRenderContext()
+        # Backwards compatibility: 'indexed' format = binary with indexed=True
+        from render_engines.binary_render_context import BinaryRenderContext
+        return BinaryRenderContext(indexed=True)
     
     elif config.output_format == 'none':
         return None
@@ -236,6 +244,7 @@ def run(
     # Convenience kwargs that override config
     backend: Optional[Backend] = None,
     output_format: Optional[OutputFormat] = None,
+    indexed: Optional[bool] = None,
     profile: Optional[bool] = None,
 ) -> GXMLResult:
     """
@@ -252,6 +261,8 @@ def run(
         node: Houdini node for rendering (required if output_format='houdini').
         backend: Override config.backend.
         output_format: Override config.output_format.
+        indexed: Override config.indexed. If True, use shared vertices with
+                 deduplication (GPU efficient). Only applies to 'binary' format.
         profile: Override config.profile.
     
     Returns:
@@ -268,8 +279,11 @@ def run(
         # With backend selection
         result = run(xml, backend='c')
         
+        # Binary output with indexed vertices (GPU efficient)
+        result = run(xml, output_format='binary', indexed=True)
+        
         # With full config
-        config = GXMLConfig(backend='c', output_format='json', profile=True)
+        config = GXMLConfig(backend='c', output_format='binary', indexed=True)
         result = run(xml, config=config)
         
         # With profiling
@@ -286,6 +300,8 @@ def run(
         config.backend = backend
     if output_format is not None:
         config.output_format = output_format
+    if indexed is not None:
+        config.indexed = indexed
     if profile is not None:
         config.profile = profile
     
