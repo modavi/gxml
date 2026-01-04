@@ -135,56 +135,6 @@ class GXMLResult:
 
 
 # =============================================================================
-# Internal Helpers
-# =============================================================================
-
-def _set_backend(backend: Backend) -> None:
-    """Set the solver backend."""
-    from elements.solvers import set_solver_backend
-    set_solver_backend(backend)
-
-
-def _get_render_context(config: GXMLConfig):
-    """Get the render context, creating default if needed."""
-    if config.mesh_render_context is None:
-        # Default: BinaryRenderContext with default options
-        from render_engines.binary_render_context import BinaryRenderContext
-        return BinaryRenderContext()
-    
-    if config.mesh_render_context is False:
-        # Explicitly skip rendering
-        return None
-    
-    # User provided a render context instance
-    return config.mesh_render_context
-
-
-def _collect_stats(root) -> Dict[str, int]:
-    """Collect statistics from the processed tree."""
-    stats = {
-        'panel_count': 0,
-        'intersection_count': 0,
-        'polygon_count': 0,
-    }
-    
-    # Count panels
-    def count_panels(element):
-        count = 1 if type(element).__name__ == 'GXMLPanel' else 0
-        for child in element.children:
-            count += count_panels(child)
-        return count
-    
-    stats['panel_count'] = count_panels(root)
-    
-    # Get intersection count from cache
-    if hasattr(root, '_panel_solution_cache'):
-        intersection_solution, _, _ = root._panel_solution_cache
-        stats['intersection_count'] = len(intersection_solution.intersections)
-    
-    return stats
-
-
-# =============================================================================
 # Main API
 # =============================================================================
 
@@ -268,7 +218,8 @@ def run(
     
     try:
         # Set backend
-        _set_backend(config.backend)
+        from elements.solvers import set_solver_backend
+        set_solver_backend(config.backend)
         
         # Parse: GXML string → GOM
         push_perf_marker("parse")
@@ -282,7 +233,13 @@ def run(
         
         # Render: GOM → mesh
         mesh = None
-        render_ctx = _get_render_context(config)
+        if config.mesh_render_context is False:
+            render_ctx = None
+        elif config.mesh_render_context is None:
+            from render_engines.binary_render_context import BinaryRenderContext
+            render_ctx = BinaryRenderContext()
+        else:
+            render_ctx = config.mesh_render_context
         
         if render_ctx is not None:
             push_perf_marker("render")
@@ -295,7 +252,22 @@ def run(
         
         # Collect timings and stats
         timings = get_profile_results() if config.profile else None
-        stats = _collect_stats(gom)
+        
+        # Count panels
+        def count_panels(element):
+            count = 1 if type(element).__name__ == 'GXMLPanel' else 0
+            for child in element.children:
+                count += count_panels(child)
+            return count
+        
+        stats = {
+            'panel_count': count_panels(gom),
+            'intersection_count': 0,
+            'polygon_count': 0,
+        }
+        if hasattr(gom, '_panel_solution_cache'):
+            intersection_solution, _, _ = gom._panel_solution_cache
+            stats['intersection_count'] = len(intersection_solution.intersections)
         
         return GXMLResult(
             gom=gom,
