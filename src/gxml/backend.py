@@ -31,36 +31,26 @@ def check_backends() -> Dict[str, bool]:
     Returns:
         Dict with availability of each backend:
         - 'cpu': Always True (pure Python fallback)
-        - 'c': True if C solver extension is available
-        - 'c_profiler': True if C profiler extension is available  
+        - 'c': True if C extensions are available (solvers, profiler, vec3)
         - 'taichi': Currently always False (disabled due to Vulkan issues)
     
     Example:
         >>> from gxml import check_backends
         >>> backends = check_backends()
         >>> if backends['c']:
-        ...     print("C solvers available - using fast path")
+        ...     print("C extensions available - using fast path")
     """
     availability = {
         'cpu': True,  # Always available
         'c': False,
-        'c_profiler': False,
         'taichi': False,  # Disabled - Vulkan overhead issues on Windows
     }
     
-    # Check solver C extension
+    # Check C extensions (all built together, so just check one)
     try:
         from elements.solvers.c_solver_wrapper import _C_EXTENSION_AVAILABLE
         availability['c'] = _C_EXTENSION_AVAILABLE
     except ImportError:
-        pass
-    
-    # Check profiler C extension
-    try:
-        from profiling.profile import _USE_C_PROFILER
-        availability['c_profiler'] = _USE_C_PROFILER
-    except (ImportError, AttributeError):
-        # May be compiled out or not built
         pass
     
     return availability

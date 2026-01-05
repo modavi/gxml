@@ -1,5 +1,5 @@
 /*
- * _c_profiler.c - Ultra-fast profiling C extension for GXML
+ * _c_profile.c - Ultra-fast profiling C extension for GXML
  * 
  * This module provides a minimal C implementation of the profiling hot path:
  *   - push_marker(marker_id) - Record push event with timestamp
@@ -12,7 +12,7 @@
  * creation in the hot path. Events are stored in a pre-allocated C array
  * and only converted to Python objects when get_events() is called.
  * 
- * Build with: python setup_c_profiler.py build_ext --inplace
+ * Build with: pip install -e .
  */
 
 #define PY_SSIZE_T_CLEAN
@@ -210,7 +210,7 @@ ProfiledFunction_getattro(ProfiledFunctionObject* self, PyObject* name) {
 
 static PyTypeObject ProfiledFunctionType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "_c_profiler.ProfiledFunction",
+    .tp_name = "_c_profile.ProfiledFunction",
     .tp_doc = "C-level profiled function wrapper",
     .tp_basicsize = sizeof(ProfiledFunctionObject),
     .tp_itemsize = 0,
@@ -320,7 +320,7 @@ static PyMethodDef PerfMarker_methods[] = {
 
 static PyTypeObject PerfMarkerType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "_c_profiler.PerfMarker",
+    .tp_name = "_c_profile.PerfMarker",
     .tp_doc = "C-level context manager for performance marking",
     .tp_basicsize = sizeof(PerfMarkerObject),
     .tp_itemsize = 0,
@@ -468,15 +468,15 @@ static PyMethodDef ProfilerMethods[] = {
     {NULL, NULL, 0, NULL}
 };
 
-static struct PyModuleDef profilermodule = {
+static struct PyModuleDef profilemodule = {
     PyModuleDef_HEAD_INIT,
-    "_c_profiler",
+    "_c_profile",
     "High-performance profiling C extension for GXML",
     -1,
     ProfilerMethods
 };
 
-PyMODINIT_FUNC PyInit__c_profiler(void) {
+PyMODINIT_FUNC PyInit__c_profile(void) {
     PyObject* module;
     
     /* Initialize the ProfiledFunction type */
@@ -489,7 +489,7 @@ PyMODINIT_FUNC PyInit__c_profiler(void) {
         return NULL;
     }
     
-    module = PyModule_Create(&profilermodule);
+    module = PyModule_Create(&profilemodule);
     if (module == NULL) {
         return NULL;
     }

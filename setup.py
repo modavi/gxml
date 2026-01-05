@@ -7,7 +7,7 @@ Usage:
 
 C extensions are built next to their Python source (standard approach):
     - src/gxml/elements/solvers/_c_solvers.*.pyd
-    - src/gxml/profiling/_c_profiler.*.pyd
+    - src/gxml/profiling/_c_profile.*.pyd
     - src/gxml/mathutils/_vec3.*.pyd
 
 These .pyd/.so files are gitignored.
@@ -44,8 +44,8 @@ def get_extensions():
         ),
         # C Profiler
         Extension(
-            'gxml.profiling._c_profiler',
-            sources=['src/gxml/profiling/_c_profiler.c'],
+            'gxml.profiling._c_profile',
+            sources=['src/gxml/profiling/_c_profile.c'],
             extra_compile_args=compile_args,
             extra_link_args=link_args,
         ),

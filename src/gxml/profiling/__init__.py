@@ -1,44 +1,35 @@
 """
 GXML Profiling Package
 
-This package provides lightweight profiling markers for GXML:
+Lightweight profiling markers for GXML performance measurement.
 
-- perf_marker: Context manager for timing code sections
-- @profile: Decorator for timing functions
-- get_profile_results: Retrieve timing data after a run
-
-Quick usage:
-    from gxml.profiling import profile, perf_marker
+Usage:
+    from gxml.profiling import profile, perf_marker, get_profile_results, reset_profile
     
     @profile
     def my_function():
         with perf_marker("my_section"):
             ...
+    
+    results = get_profile_results()
+    reset_profile()
 
-For benchmarking utilities, use scripts/benchmark.py or tests/test_fixtures/profiling.py
+For benchmarking utilities, use scripts/benchmark.py
 """
 
-# Re-export from profile module
 from .profile import (
-    _USE_C_PROFILER,
-    _PROFILING_COMPILED_OUT,
-    is_c_profiler_available,
-    reset_profile,
-    get_profile_results,
-    perf_marker,
-    get_marker,
+    # Public API
     profile,
+    perf_marker,
+    get_profile_results,
+    reset_profile,
+    # Internal (used by tests)
+    _PROFILING_COMPILED_OUT,
 )
 
 __all__ = [
-    # Backend
-    '_USE_C_PROFILER',
-    '_PROFILING_COMPILED_OUT',
-    'is_c_profiler_available',
-    # Profile markers
-    'reset_profile',
-    'get_profile_results',
-    'perf_marker',
-    'get_marker',
     'profile',
+    'perf_marker',
+    'get_profile_results',
+    'reset_profile',
 ]
