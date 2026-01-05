@@ -517,11 +517,13 @@ t_imports_done = time.perf_counter()
 
 # Single timed run with full data collection
 ctx = BinaryRenderContext(shared_vertices={shared_verts_str})
+t0 = time.perf_counter()
 result = gxml_run(xml_content, config=GXMLConfig(backend="{backend}", mesh_render_context=ctx, profile={profile_str}))
+wall_clock_ms = (time.perf_counter() - t0) * 1000
 
 # Use the 'run' marker time if profiling, otherwise fall back to wall-clock
 timings = result.timings if result.timings else {{}}
-timing_ms = timings.get('run', {{}}).get('total_ms', 0.0)
+timing_ms = timings.get('run', {{}}).get('total_ms', 0.0) or wall_clock_ms
 
 # Collect output
 output = {{
@@ -997,8 +999,8 @@ def assert_performance(
 def run_benchmark(
     xml_content: str,
     backend: str = 'cpu',
-    iterations: int = 3,
-    warmup: int = 0,  # Deprecated, kept for backward compatibility (ignored)
+    iterations: int = 1,
+    warmup: bool = True,
     shared_vertices: bool = False,
     show_hierarchy: bool = True,
     label: str = "",
@@ -1020,7 +1022,7 @@ def run_benchmark(
         xml_content: The XML string to profile
         backend: Solver backend ('cpu', 'c', or 'taichi')
         iterations: Number of timed iterations (each in separate subprocess)
-        warmup: DEPRECATED (ignored) - subprocess isolation makes warmup unnecessary
+        warmup: If True (default), run one untimed iteration first to warm OS caches
         shared_vertices: Whether to use shared vertices mode in render context
         show_hierarchy: If True, show hierarchical tree. If False, show flat list.
         label: Optional label for the report header (e.g. filename)
@@ -1028,11 +1030,6 @@ def run_benchmark(
         measure_overhead: If True, also run optimized mode to measure profiling overhead
         discard_outliers: If True, detect and rerun iterations that are ±threshold from mean
         outlier_threshold: Threshold for outlier detection (default 0.10 = ±10%)
-        shared_vertices: Whether to use shared vertices mode in render context
-        show_hierarchy: If True, show hierarchical tree. If False, show flat list.
-        label: Optional label for the report header (e.g. filename)
-        verbose: If True, print progress messages and report
-        measure_overhead: If True, also run optimized mode to measure profiling overhead
     
     Returns:
         BenchmarkResult with all timing data (overhead_result attached if measure_overhead=True)
@@ -1046,7 +1043,20 @@ def run_benchmark(
         raise ValueError(f"{backend.upper()} backend not available")
     
     if verbose:
-        print(f"Running benchmark ({iterations} iterations)...")
+        print(f"Running benchmark ({iterations} iteration{'s' if iterations > 1 else ''})...")
+    
+    # Warmup: run one untimed subprocess to warm OS caches (file system, memory pages, DLLs)
+    if warmup:
+        if verbose:
+            print("  Warmup...", end="", flush=True)
+        _run_subprocess_iteration(
+            xml_content, backend,
+            shared_vertices=shared_vertices,
+            profile_enabled=True,
+            use_optimized=False,
+        )
+        if verbose:
+            print(" done")
     
     overhead_result = None
     

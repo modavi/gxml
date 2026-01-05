@@ -326,9 +326,10 @@ Examples:
     )
     
     parser.add_argument("xml_path", type=Path, help="Path to the GXML/XML file to profile")
-    parser.add_argument("-i", "--iterations", type=int, default=3, help="Number of iterations (default: 3)")
+    parser.add_argument("-i", "--iterations", type=int, default=1, help="Number of iterations (default: 1)")
     parser.add_argument("-b", "--backend", choices=["cpu", "c", "taichi"], default="cpu", help="Backend (default: cpu)")
     parser.add_argument("--no-hierarchy", action="store_true", help="Show flat list instead of tree")
+    parser.add_argument("--no-warmup", action="store_true", help="Skip warmup iteration")
     parser.add_argument("--overhead", action="store_true", help="Measure profiling overhead (runs with and without -O)")
     parser.add_argument("--sampling", action="store_true", help="Use py-spy sampling profiler (zero overhead)")
     parser.add_argument("--sampling-rate", type=int, default=1000, help="Sampling rate in Hz (default: 1000)")
@@ -355,6 +356,7 @@ Examples:
             xml_content=args.xml_path.read_text(encoding='utf-8'),
             backend=args.backend,
             iterations=args.iterations,
+            warmup=not args.no_warmup,
             show_hierarchy=not args.no_hierarchy,
             label=args.xml_path.name,
             measure_overhead=args.overhead,
