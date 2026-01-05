@@ -1,22 +1,21 @@
 """
 GXML Profiling Package
 
-This package provides profiling and benchmarking utilities for GXML:
+This package provides lightweight profiling markers for GXML:
 
-- profile: Lightweight profiling markers (@profile decorator, perf_marker context manager)
-- benchmark: Full benchmarking utilities (run_benchmark, TimingResult, BenchmarkResult)
+- perf_marker: Context manager for timing code sections
+- @profile: Decorator for timing functions
+- get_profile_results: Retrieve timing data after a run
 
 Quick usage:
-    from gxml.profiling import profile, perf_marker, enable_profiling
+    from gxml.profiling import profile, perf_marker
     
     @profile
     def my_function():
         with perf_marker("my_section"):
             ...
-    
-    # For benchmarking:
-    from gxml.profiling import run_benchmark
-    result = run_benchmark(xml_content, backend='cpu', iterations=3)
+
+For benchmarking utilities, use scripts/benchmark.py or tests/test_fixtures/profiling.py
 """
 
 # Re-export from profile module
@@ -31,24 +30,6 @@ from .profile import (
     _PROFILING_COMPILED_OUT,
 )
 
-# Re-export from runner module
-from .runner import (
-    TimingResult,
-    BenchmarkResult,
-    OverheadResult,
-    check_backends,
-    is_c_available,
-    run_pipeline,
-    run_warmup,
-    run_benchmark,
-    assert_performance,
-    print_profile_report,
-    print_benchmark_result,
-    print_timing_breakdown,
-    print_comparison_table,
-    format_time,
-)
-
 __all__ = [
     # Profile markers
     'enable_profiling',
@@ -59,19 +40,4 @@ __all__ = [
     'get_marker',
     'profile',
     '_PROFILING_COMPILED_OUT',
-    # Benchmark utilities
-    'TimingResult',
-    'BenchmarkResult',
-    'OverheadResult',
-    'check_backends',
-    'is_c_available',
-    'run_pipeline',
-    'run_warmup',
-    'run_benchmark',
-    'assert_performance',
-    'print_profile_report',
-    'print_benchmark_result',
-    'print_timing_breakdown',
-    'print_comparison_table',
-    'format_time',
 ]
