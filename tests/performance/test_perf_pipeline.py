@@ -28,7 +28,6 @@ from tests.test_fixtures.profiling import (
     assert_performance,
     check_backends,
     is_c_available,
-    print_benchmark_result,
 )
 
 
