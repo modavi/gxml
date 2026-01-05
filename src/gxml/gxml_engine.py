@@ -164,6 +164,13 @@ class GXMLResult:
 
 
 # =============================================================================
+# Backend Availability (from backend.py)
+# =============================================================================
+
+from backend import check_backends
+
+
+# =============================================================================
 # Main API
 # =============================================================================
 
@@ -247,7 +254,7 @@ def run(
     
     with perf_marker("run"):
         # Set backend
-        from elements.solvers import set_solver_backend
+        from backend import set_solver_backend
         set_solver_backend(config.backend)
         
         # Validate: Check XML against schema

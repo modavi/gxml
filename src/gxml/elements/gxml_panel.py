@@ -197,7 +197,7 @@ class GXMLPanel(GXMLLayoutElement):
         share the same computation. This is cleared at the start of each
         post-layout pass.
         """
-        from elements.solvers import (
+        from backend import (
             get_solver_backend, 
             get_intersection_solver, 
             get_face_solver,
@@ -232,11 +232,13 @@ class GXMLPanel(GXMLLayoutElement):
         
     @profile("on_post_layout")
     def on_post_layout(self):
-        from elements.solvers import (
+        from elements.solvers.gxml_gpu_geometry_builder import (
             get_geometry_builder, 
             get_geometry_backend,
+        )
+        from backend import (
             get_solver_backend,
-            get_full_geometry_builder
+            get_full_geometry_builder,
         )
         
         # Get or compute the shared solution (cached on parent)

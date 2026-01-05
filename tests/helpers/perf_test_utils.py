@@ -70,7 +70,7 @@ class PerfResult:
 # Backend Utilities (re-exported from gxml)
 # =============================================================================
 
-from gxml import check_backends, is_c_available
+from gxml import check_backends
 
 
 # =============================================================================

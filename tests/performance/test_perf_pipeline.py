@@ -27,7 +27,6 @@ from tests.helpers.perf_test_utils import (
     run_perf_test,
     assert_performance,
     check_backends,
-    is_c_available,
 )
 
 
@@ -97,7 +96,7 @@ class TestPipelinePerformance:
     @perf_xfail
     def test_c_extension_200panels(self):
         """Test C extension backend on the 200-panel stress test."""
-        if not is_c_available():
+        if not check_backends()['c']:
             pytest.skip("C extension not available")
         
         xml_content = load_xml("200Panels.xml")
@@ -107,7 +106,7 @@ class TestPipelinePerformance:
     @perf_xfail
     def test_c_extension_not_slower_than_cpu(self):
         """Ensure C extension is not significantly slower than CPU."""
-        if not is_c_available():
+        if not check_backends()['c']:
             pytest.skip("C extension not available")
         
         xml_content = load_xml("200Panels.xml")
@@ -242,7 +241,7 @@ class TestOutputFormatPerformance:
     @perf_xfail
     def test_shared_vertices_with_c_extension(self):
         """Test shared_vertices mode with C extension backend."""
-        if not is_c_available():
+        if not check_backends()['c']:
             pytest.skip("C extension not available")
         
         xml_content = load_xml("200Panels.xml")
