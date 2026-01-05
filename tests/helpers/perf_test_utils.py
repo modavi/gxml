@@ -67,29 +67,10 @@ class PerfResult:
 
 
 # =============================================================================
-# Backend Utilities
+# Backend Utilities (re-exported from gxml)
 # =============================================================================
 
-def check_backends() -> Dict[str, bool]:
-    """Check which solver backends are available."""
-    availability = {
-        'cpu': True,
-        'c': False,
-        'taichi': False,
-    }
-    
-    try:
-        from elements.solvers import is_c_extension_available
-        availability['c'] = is_c_extension_available()
-    except Exception:
-        pass
-    
-    return availability
-
-
-def is_c_available() -> bool:
-    """Quick check if C extension is available."""
-    return check_backends()['c']
+from gxml import check_backends, is_c_available
 
 
 # =============================================================================

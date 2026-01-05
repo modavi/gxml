@@ -17,6 +17,7 @@ Examples:
 """
 
 import argparse
+import io
 import json
 import subprocess
 import sys
@@ -24,6 +25,11 @@ import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+# Fix Windows console encoding for Unicode box-drawing characters
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add project paths for development
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -654,56 +660,10 @@ class BenchmarkResult:
 
 
 # =============================================================================
-# Backend Utilities
+# Backend Utilities (re-exported from gxml)
 # =============================================================================
 
-# Taichi is currently broken on Windows (Vulkan has massive overhead)
-ENABLE_TAICHI = False
-
-
-def check_backends() -> Dict[str, bool]:
-    """Check which solver backends are available."""
-    availability = {
-        'cpu': True,  # Always available
-        'c': False,
-        'taichi': False,
-    }
-    
-    # Check C extension
-    try:
-        from elements.solvers import is_c_extension_available
-        availability['c'] = is_c_extension_available()
-    except Exception:
-        pass
-    
-    # Check Taichi (only if enabled)
-    if ENABLE_TAICHI:
-        try:
-            import taichi as ti
-            gpu_backends = [ti.cuda, ti.vulkan, ti.metal]
-            for gpu_arch in gpu_backends:
-                try:
-                    ti.init(arch=gpu_arch, offline_cache=True, print_ir=False)
-                    availability['taichi'] = True
-                    break
-                except Exception:
-                    continue
-            
-            if not availability['taichi']:
-                ti.init(arch=ti.cpu, offline_cache=True, print_ir=False)
-                availability['taichi'] = True
-                
-        except ImportError:
-            pass
-        except Exception:
-            pass
-    
-    return availability
-
-
-def is_c_available() -> bool:
-    """Quick check if C extension is available."""
-    return check_backends()['c']
+from gxml import check_backends, is_c_available
 
 
 # =============================================================================
