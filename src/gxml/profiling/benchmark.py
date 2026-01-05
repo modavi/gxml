@@ -91,6 +91,48 @@ def format_time(ms: float) -> str:
         return f"{ms*1000:.1f}µs"
 
 
+def _average_markers(results: List['TimingResult']) -> Dict[str, Any]:
+    """Average marker timings across multiple results."""
+    if not results:
+        return {}
+    if len(results) == 1:
+        return results[0].markers
+    
+    # Collect all marker names
+    all_markers = set()
+    for r in results:
+        all_markers.update(r.markers.keys())
+    
+    averaged = {}
+    for name in all_markers:
+        totals = []
+        counts = []
+        parents_merged = {}
+        
+        for r in results:
+            if name in r.markers:
+                m = r.markers[name]
+                totals.append(m.get('total_ms', 0.0))
+                counts.append(m.get('count', 0))
+                # Merge parent counts
+                for parent, cnt in m.get('parents', {}).items():
+                    parents_merged[parent] = parents_merged.get(parent, 0) + cnt
+        
+        if totals:
+            avg_total = sum(totals) / len(totals)
+            avg_count = sum(counts) / len(counts)
+            averaged[name] = {
+                'total_ms': round(avg_total, 3),
+                'count': int(round(avg_count)),
+                'avg_ms': round(avg_total / avg_count, 3) if avg_count > 0 else 0.0,
+                'min_ms': round(min(totals), 3),
+                'max_ms': round(max(totals), 3),
+                'parents': {k: v // len(results) for k, v in parents_merged.items()},
+            }
+    
+    return averaged
+
+
 # =============================================================================
 # Data Classes
 # =============================================================================
@@ -381,15 +423,17 @@ def run_pipeline(xml_content: str, backend: str = 'cpu', shared_vertices: bool =
         profile=True,
     )
     
-    t_start = time.perf_counter()
     gxml_result = run(xml_content, config=config)
-    total_ms = (time.perf_counter() - t_start) * 1000
+    
+    # Use the 'run' marker time as total (excludes get_profile_results overhead)
+    timings = gxml_result.timings or {}
+    total_ms = timings.get('run', {}).get('total_ms', 0.0)
     
     # Build TimingResult from marker data
     result = TimingResult(
         backend=backend,
         total_ms=total_ms,
-        markers=gxml_result.timings or {},
+        markers=timings,
     )
     
     # Stats
@@ -473,14 +517,16 @@ t_imports_done = time.perf_counter()
 
 # Single timed run with full data collection
 ctx = BinaryRenderContext(shared_vertices={shared_verts_str})
-t0 = time.perf_counter()
 result = gxml_run(xml_content, config=GXMLConfig(backend="{backend}", mesh_render_context=ctx, profile={profile_str}))
-timing_ms = (time.perf_counter() - t0) * 1000
+
+# Use the 'run' marker time if profiling, otherwise fall back to wall-clock
+timings = result.timings if result.timings else {{}}
+timing_ms = timings.get('run', {{}}).get('total_ms', 0.0)
 
 # Collect output
 output = {{
     "timing_ms": timing_ms,
-    "markers": result.timings if result.timings else {{}},
+    "markers": timings,
     "panel_count": result.stats.get("panel_count", 0) if result.stats else 0,
     "intersection_count": result.stats.get("intersection_count", 0) if result.stats else 0,
     "polygon_count": result.stats.get("polygon_count", 0) if result.stats else 0,
@@ -525,6 +571,9 @@ def _run_timed_iterations(
     profile_enabled: bool = True,
     use_optimized: bool = False,
     verbose_callback=None,
+    discard_outliers: bool = False,
+    outlier_threshold: float = 0.10,
+    max_retries: int = 3,
 ) -> BenchmarkResult:
     """
     Run a full benchmark with multiple iterations, each in a separate subprocess.
@@ -541,7 +590,10 @@ def _run_timed_iterations(
         shared_vertices: Whether to use shared vertices mode
         profile_enabled: If True, run with profile=True
         use_optimized: If True, run with python -O
-        verbose_callback: Optional callback(iteration, total) for progress
+        verbose_callback: Optional callback(iteration, total, retried) for progress
+        discard_outliers: If True, detect and rerun outlier iterations
+        outlier_threshold: Threshold for outlier detection (default 0.10 = ±10%)
+        max_retries: Maximum retries per outlier iteration
     
     Returns:
         BenchmarkResult with aggregated statistics
@@ -550,7 +602,7 @@ def _run_timed_iterations(
     
     for i in range(iterations):
         if verbose_callback:
-            verbose_callback(i + 1, iterations)
+            verbose_callback(i + 1, iterations, False)
         
         data = _run_subprocess_iteration(
             xml_content, backend,
@@ -570,6 +622,48 @@ def _run_timed_iterations(
         timing_result.polygon_count = data.get("polygon_count", 0)
         
         results.append(timing_result)
+    
+    # Outlier detection and rerun (using median for robustness)
+    if discard_outliers and len(results) >= 3:
+        retries_made = 0
+        while retries_made < max_retries * iterations:
+            times = [r.total_ms for r in results]
+            median = statistics.median(times)
+            
+            # Find outliers (outside ±threshold of median)
+            outlier_indices = []
+            for idx, t in enumerate(times):
+                deviation = abs(t - median) / median
+                if deviation > outlier_threshold:
+                    outlier_indices.append((idx, deviation))
+            
+            if not outlier_indices:
+                break  # No more outliers
+            
+            # Sort by deviation (worst first) and rerun the worst outlier
+            outlier_indices.sort(key=lambda x: x[1], reverse=True)
+            idx = outlier_indices[0][0]
+            if verbose_callback:
+                verbose_callback(idx + 1, iterations, True)
+            
+            data = _run_subprocess_iteration(
+                xml_content, backend,
+                shared_vertices=shared_vertices,
+                profile_enabled=profile_enabled,
+                use_optimized=use_optimized,
+            )
+            
+            timing_result = TimingResult(
+                backend=backend,
+                total_ms=data["timing_ms"],
+                markers=data.get("markers", {}),
+            )
+            timing_result.panel_count = data.get("panel_count", 0)
+            timing_result.intersection_count = data.get("intersection_count", 0)
+            timing_result.polygon_count = data.get("polygon_count", 0)
+            
+            results[idx] = timing_result
+            retries_made += 1
     
     times = [r.total_ms for r in results]
     
@@ -910,6 +1004,8 @@ def run_benchmark(
     label: str = "",
     verbose: bool = True,
     measure_overhead: bool = False,
+    discard_outliers: bool = False,
+    outlier_threshold: float = 0.10,
 ) -> BenchmarkResult:
     """
     Run a benchmark on XML content and print a detailed report.
@@ -925,6 +1021,13 @@ def run_benchmark(
         backend: Solver backend ('cpu', 'c', or 'taichi')
         iterations: Number of timed iterations (each in separate subprocess)
         warmup: DEPRECATED (ignored) - subprocess isolation makes warmup unnecessary
+        shared_vertices: Whether to use shared vertices mode in render context
+        show_hierarchy: If True, show hierarchical tree. If False, show flat list.
+        label: Optional label for the report header (e.g. filename)
+        verbose: If True, print progress messages and report
+        measure_overhead: If True, also run optimized mode to measure profiling overhead
+        discard_outliers: If True, detect and rerun iterations that are ±threshold from mean
+        outlier_threshold: Threshold for outlier detection (default 0.10 = ±10%)
         shared_vertices: Whether to use shared vertices mode in render context
         show_hierarchy: If True, show hierarchical tree. If False, show flat list.
         label: Optional label for the report header (e.g. filename)
@@ -1010,9 +1113,10 @@ def run_benchmark(
         result.overhead = overhead_result
     else:
         # Normal benchmark - just run Enabled mode
-        def verbose_callback(iteration, total):
+        def verbose_callback(iteration, total, retried=False):
             if verbose:
-                print(f"\r  Enabled (profiling):     iteration {iteration}/{total}", end="", flush=True)
+                status = "  (retry)" if retried else ""
+                print(f"\r  Enabled (profiling):     iteration {iteration}/{total}{status}    ", end="", flush=True)
         
         result = _run_timed_iterations(
             xml_content, backend, 
@@ -1021,6 +1125,8 @@ def run_benchmark(
             profile_enabled=True,
             use_optimized=False,
             verbose_callback=verbose_callback if verbose else None,
+            discard_outliers=discard_outliers,
+            outlier_threshold=outlier_threshold,
         )
         
         if verbose:
@@ -1054,10 +1160,17 @@ def print_profile_report(
         show_hierarchy: If True, show hierarchical tree. If False, show flat list.
         overhead: Optional overhead measurement results
     """
-    # Find the result closest to the median timing
-    median_result = None
+    # Average markers across all results for display
+    averaged_result = None
     if result.all_results:
-        median_result = min(result.all_results, key=lambda r: abs(r.total_ms - result.median_ms))
+        averaged_markers = _average_markers(result.all_results)
+        # Use averaged 'run' marker time as total (consistent with averaged markers)
+        avg_total = averaged_markers.get('run', {}).get('total_ms', result.mean_ms)
+        averaged_result = TimingResult(
+            backend=result.backend,
+            total_ms=avg_total,
+            markers=averaged_markers,
+        )
     
     print()
     print("=" * 70)
@@ -1071,7 +1184,8 @@ def print_profile_report(
     print()
     
     if result.iterations > 1:
-        print(f"  Median: {format_time(result.median_ms)}, Std: {format_time(result.std_ms)}")
+        variance_pct = (result.std_ms / result.mean_ms * 100) if result.mean_ms > 0 else 0
+        print(f"  Mean: {format_time(result.mean_ms)} ±{variance_pct:.1f}%")
         print(f"  Min: {format_time(result.min_ms)}, Max: {format_time(result.max_ms)}")
         print()
     
@@ -1080,11 +1194,11 @@ def print_profile_report(
     print("─" * 70)
     print()
     
-    if median_result:
+    if averaged_result:
         if show_hierarchy:
-            print(median_result.hierarchical_breakdown())
+            print(averaged_result.hierarchical_breakdown())
         else:
-            print(median_result.breakdown_str(detailed=True))
+            print(averaged_result.breakdown_str(detailed=True))
     else:
         print("  (no results)")
     

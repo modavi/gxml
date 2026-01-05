@@ -59,7 +59,6 @@ from gxml_parser import GXMLParser
 from gxml_layout import GXMLLayout
 from gxml_render import GXMLRender
 from profiling import (
-    enable_profiling, 
     reset_profile, 
     get_profile_results,
     perf_marker,
@@ -242,73 +241,64 @@ def run(
     if profile is not None:
         config.profile = profile
     
-    # Setup profiling
+    # Clear any previous profiling data
     if config.profile:
         reset_profile()
-        enable_profiling(True)
     
-    try:
-        with perf_marker("run"):
-            # Set backend
-            from elements.solvers import set_solver_backend
-            set_solver_backend(config.backend)
-            
-            # Validate: Check XML against schema
-            with perf_marker("validate"):
-                validate_xml(xml)
-            
-            # Parse: GXML string → GOM
-            gom = GXMLParser.parse(xml)
-            
-            # Layout: compute positions, intersections, geometry
-            GXMLLayout.layout(gom)
-            
-            # Render: GOM → mesh
-            mesh = None
-            if config.mesh_render_context is False:
-                render_ctx = None
-            elif config.mesh_render_context is None:
-                from render_engines.binary_render_context import BinaryRenderContext
-                render_ctx = BinaryRenderContext()
-            else:
-                render_ctx = config.mesh_render_context
-            
-            if render_ctx is not None:
-                GXMLRender.render(gom, render_ctx)
-                
-                # Get mesh from context
-                if hasattr(render_ctx, 'get_output'):
-                    mesh = render_ctx.get_output()
-            
-            # Count panels
-            def count_panels(element):
-                count = 1 if type(element).__name__ == 'GXMLPanel' else 0
-                for child in element.children:
-                    count += count_panels(child)
-                return count
-            
-            stats = {
-                'panel_count': count_panels(gom),
-                'intersection_count': 0,
-                'polygon_count': 0,
-            }
-            if hasattr(gom, '_panel_solution_cache'):
-                intersection_solution, _, _ = gom._panel_solution_cache
-                stats['intersection_count'] = len(intersection_solution.intersections)
-            
-        # End of perf_marker("GXML::Run") block
+    with perf_marker("run"):
+        # Set backend
+        from elements.solvers import set_solver_backend
+        set_solver_backend(config.backend)
         
-        # Collect timings AFTER GXML::Run marker ends
-        timings = get_profile_results() if config.profile else None
+        # Validate: Check XML against schema
+        with perf_marker("validate"):
+            validate_xml(xml)
         
-        return GXMLResult(
-            gom=gom,
-            mesh=mesh,
-            timings=timings,
-            stats=stats,
-        )
+        # Parse: GXML string → GOM
+        gom = GXMLParser.parse(xml)
+        
+        # Layout: compute positions, intersections, geometry
+        GXMLLayout.layout(gom)
+        
+        # Render: GOM → mesh
+        mesh = None
+        if config.mesh_render_context is False:
+            render_ctx = None
+        elif config.mesh_render_context is None:
+            from render_engines.binary_render_context import BinaryRenderContext
+            render_ctx = BinaryRenderContext()
+        else:
+            render_ctx = config.mesh_render_context
+        
+        if render_ctx is not None:
+            GXMLRender.render(gom, render_ctx)
+            
+            # Get mesh from context
+            if hasattr(render_ctx, 'get_output'):
+                mesh = render_ctx.get_output()
+        
+        # Count panels
+        def count_panels(element):
+            count = 1 if type(element).__name__ == 'GXMLPanel' else 0
+            for child in element.children:
+                count += count_panels(child)
+            return count
+        
+        stats = {
+            'panel_count': count_panels(gom),
+            'intersection_count': 0,
+            'polygon_count': 0,
+        }
+        if hasattr(gom, '_panel_solution_cache'):
+            intersection_solution, _, _ = gom._panel_solution_cache
+            stats['intersection_count'] = len(intersection_solution.intersections)
     
-    finally:
-        # Always disable profiling when done
-        if config.profile:
-            enable_profiling(False)
+    # Collect timings AFTER run marker ends
+    timings = get_profile_results() if config.profile else None
+    
+    return GXMLResult(
+        gom=gom,
+        mesh=mesh,
+        timings=timings,
+        stats=stats,
+    )

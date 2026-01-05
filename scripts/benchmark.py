@@ -332,6 +332,8 @@ Examples:
     parser.add_argument("--overhead", action="store_true", help="Measure profiling overhead (runs with and without -O)")
     parser.add_argument("--sampling", action="store_true", help="Use py-spy sampling profiler (zero overhead)")
     parser.add_argument("--sampling-rate", type=int, default=1000, help="Sampling rate in Hz (default: 1000)")
+    parser.add_argument("--discard-outliers", action="store_true", help="Rerun iterations that are ±10%% from mean")
+    parser.add_argument("--outlier-threshold", type=float, default=0.10, help="Outlier threshold (default: 0.10 = ±10%%)")
     
     args = parser.parse_args()
     
@@ -356,6 +358,8 @@ Examples:
             show_hierarchy=not args.no_hierarchy,
             label=args.xml_path.name,
             measure_overhead=args.overhead,
+            discard_outliers=args.discard_outliers,
+            outlier_threshold=args.outlier_threshold,
         )
     except Exception as e:
         print(f"Error: {e}")
