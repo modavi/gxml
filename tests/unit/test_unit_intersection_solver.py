@@ -9,7 +9,7 @@ from elements.solvers import (
     IntersectionType,
     PanelAxis
 )
-from tests.test_fixtures.mocks import GXMLMockPanel
+from tests.helpers.mocks import GXMLMockPanel
 
 class IntersectionSolverUnitTests(unittest.TestCase):
     """Unit tests for IntersectionSolver and IntersectionSolution"""

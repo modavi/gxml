@@ -21,7 +21,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(script_dir)
 sys.path.insert(0, parent_dir)
 
-from test_fixtures.xml_integration_test_tools import XMLIntegrationTestGenerator
+from helpers.xml_integration_test_tools import XMLIntegrationTestGenerator
 
 
 def main():

@@ -8,7 +8,7 @@ from gxml.elements.solvers.gxml_intersection_solver import (
     Region, Intersection, IntersectionType, PanelAxis
 )
 from gxml.elements.solvers.gxml_face_solver import FaceSolver, SegmentedPanel
-from tests.test_fixtures.mocks import GXMLMockPanel
+from tests.helpers.mocks import GXMLMockPanel
 
 
 class TestFaceSolverSSplits(unittest.TestCase):

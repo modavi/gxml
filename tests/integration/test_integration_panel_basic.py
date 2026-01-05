@@ -13,9 +13,9 @@ import mathutils.gxml_math as GXMLMath
 from layouts.gxml_construct_layout import GXMLConstructLayout
 from layouts.gxml_stack_layout import GXMLStackLayout
 from layouts.gxml_fixed_layout import GXMLFixedLayout
-from tests.test_fixtures.base_integration_test import BaseIntegrationTest
-from tests.test_fixtures.assertions import assert_corner_points
-from tests.test_fixtures.xml_integration_test_tools import XMLIntegrationTestValidator
+from tests.helpers.base_integration_test import BaseIntegrationTest
+from tests.helpers.assertions import assert_corner_points
+from tests.helpers.xml_integration_test_tools import XMLIntegrationTestValidator
 
 
 class PanelBasicXMLTests(BaseIntegrationTest):

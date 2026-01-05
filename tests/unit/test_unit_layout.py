@@ -7,7 +7,7 @@ from elements.gxml_root import GXMLRoot
 from gxml_layout import GXMLLayout
 from layouts.gxml_construct_layout import GXMLConstructLayout
 from gxml_types import Offset, Axis
-from tests.test_fixtures.mocks import GXMLMockPanel, GXMLMockLayout, LayoutPass
+from tests.helpers.mocks import GXMLMockPanel, GXMLMockLayout, LayoutPass
 
 
 class LayoutUnitTests(unittest.TestCase):

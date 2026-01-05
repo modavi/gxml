@@ -12,8 +12,8 @@ from gxml_layout import GXMLLayout
 from layouts.gxml_construct_layout import GXMLConstructLayout
 from layouts.gxml_stack_layout import GXMLStackLayout
 from layouts.gxml_fixed_layout import GXMLFixedLayout
-from tests.test_fixtures.base_integration_test import BaseIntegrationTest
-from tests.test_fixtures.assertions import assert_corner_points
+from tests.helpers.base_integration_test import BaseIntegrationTest
+from tests.helpers.assertions import assert_corner_points
 
 
 class PanelAttachmentXMLTests(BaseIntegrationTest):

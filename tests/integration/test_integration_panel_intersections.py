@@ -2,7 +2,7 @@
 Integration tests for panel intersections (T-junctions, L-junctions, etc.)
 """
 import unittest
-from tests.test_fixtures.base_integration_test import BaseIntegrationTest
+from tests.helpers.base_integration_test import BaseIntegrationTest
 
 
 class JointTests(BaseIntegrationTest):

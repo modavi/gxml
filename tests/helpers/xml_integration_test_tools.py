@@ -72,7 +72,7 @@ class XMLIntegrationTestGenerator:
         from gxml_parser import GXMLParser
         from gxml_layout import GXMLLayout
         from gxml_render import GXMLRender
-        from tests.test_fixtures.mocks import GXMLTestRenderContext
+        from tests.helpers.mocks import GXMLTestRenderContext
         
         # Parse and process the XML
         root = GXMLParser.parse(xml_string)

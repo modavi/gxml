@@ -7,8 +7,8 @@ from elements.solvers import GeometryBuilder, IntersectionSolver, FaceSolver
 from elements.solvers.gxml_face_solver import FaceSolver as FaceSolverClass
 from elements.solvers.gxml_intersection_solver import IntersectionType
 from elements.gxml_panel import PanelSide
-from tests.test_fixtures.mocks import GXMLMockPanel
-from tests.test_fixtures.assertions import assert_face_corners
+from tests.helpers.mocks import GXMLMockPanel
+from tests.helpers.assertions import assert_face_corners
 
 
 def compute_trim_to_panel(panel, target_panel, endpoint, face_to_trim):

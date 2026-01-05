@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 from elements.gxml_panel import GXMLPanel, PanelSide
 from gxml_types import Side, GXMLTransform
-from tests.test_fixtures import assert_corner_points
+from tests.helpers import assert_corner_points
 
 
 class PanelSideGeometryTests(unittest.TestCase):
