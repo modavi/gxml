@@ -54,12 +54,14 @@ pytest --tb=short                # Shorter tracebacks
 **Always run the official performance test after making changes that could affect performance:**
 
 ```bash
-# Quick regression check via pytest (recommended)
+# Quick regression check via pytest
 pytest tests/performance/ -v
 
-# Detailed profiling with breakdown
+# Detailed profiling with breakdown (PREFERRED - shows timing table)
 python tests/performance/test_perf_pipeline.py
 ```
+
+**When running performance tests, prefer running the script directly** (`python tests/performance/test_perf_pipeline.py`) rather than via pytest. The script outputs a detailed comparison table showing per-stage timing (Validate, Parse, Layout, Render) and sub-stage breakdown (Intersection Solver, Face Solver, Geometry Builder) for each backend.
 
 This test runs the full end-to-end pipeline (parse → layout → render) on multiple test files (7, 16, 75, 200 panels) and compares CPU vs C extension backends.
 

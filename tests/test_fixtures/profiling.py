@@ -31,43 +31,184 @@ if str(_GXML_PATH) not in sys.path:
 class TimingResult:
     """Stores timing results for a single pipeline run."""
     backend: str
-    # Top-level timings
-    parse_ms: float = 0.0
-    layout_ms: float = 0.0
-    render_ms: float = 0.0
     total_ms: float = 0.0
-    # Layout pass breakdown
-    measure_ms: float = 0.0
-    pre_layout_ms: float = 0.0
-    layout_pass_ms: float = 0.0
-    post_layout_ms: float = 0.0
-    # Solver breakdown
-    intersection_ms: float = 0.0
-    face_solver_ms: float = 0.0
-    geometry_ms: float = 0.0
+    # Raw marker data - all profiling markers captured during the run
+    markers: Dict[str, Any] = field(default_factory=dict)
     # Stats
     panel_count: int = 0
     intersection_count: int = 0
     polygon_count: int = 0
     vertex_count: int = 0
-    # Raw marker data
-    raw_markers: Dict[str, Any] = field(default_factory=dict)
     
-    def breakdown_str(self) -> str:
-        """Return a formatted string showing the timing breakdown."""
-        lines = [
-            f"  Parse:              {self.parse_ms:>7.1f}ms",
-            f"  Layout:             {self.layout_ms:>7.1f}ms",
-            f"    ├─ Measure:       {self.measure_ms:>7.1f}ms",
-            f"    ├─ Pre-layout:    {self.pre_layout_ms:>7.1f}ms",
-            f"    ├─ Layout pass:   {self.layout_pass_ms:>7.1f}ms",
-            f"    └─ Post-layout:   {self.post_layout_ms:>7.1f}ms",
-            f"       ├─ Intersect:  {self.intersection_ms:>7.1f}ms",
-            f"       ├─ Face solve: {self.face_solver_ms:>7.1f}ms",
-            f"       └─ Geometry:   {self.geometry_ms:>7.1f}ms",
-            f"  Render:             {self.render_ms:>7.1f}ms",
-            f"  Total:              {self.total_ms:>7.1f}ms",
-        ]
+    def get_ms(self, name: str) -> float:
+        """Get total_ms for a marker by name."""
+        if name in self.markers:
+            return self.markers[name].get('total_ms', 0.0)
+        return 0.0
+    
+    def breakdown_str(self, detailed: bool = False) -> str:
+        """
+        Return a formatted string showing the timing breakdown.
+        
+        Args:
+            detailed: If True, show all markers. If False, show simplified summary.
+        """
+        if detailed:
+            return self._detailed_breakdown()
+        return self._simplified_breakdown()
+    
+    def _simplified_breakdown(self) -> str:
+        """Show top-level timing summary."""
+        lines = []
+        # Show top-level markers sorted by time
+        top_level = ['parse', 'layout', 'render']
+        for name in top_level:
+            ms = self.get_ms(name)
+            if ms > 0:
+                lines.append(f"  {name:<20} {ms:>7.2f}ms")
+        lines.append(f"  {'total':<20} {self.total_ms:>7.2f}ms")
+        return "\n".join(lines)
+    
+    def _detailed_breakdown(self) -> str:
+        """Show all captured markers."""
+        if not self.markers:
+            return "  (no markers captured)"
+        
+        lines = []
+        # Sort markers by total_ms descending
+        sorted_markers = sorted(
+            self.markers.items(),
+            key=lambda x: x[1].get('total_ms', 0),
+            reverse=True
+        )
+        
+        # Find the longest marker name for alignment
+        max_name_len = max(len(name) for name, _ in sorted_markers) if sorted_markers else 10
+        max_name_len = max(max_name_len, 10)  # Minimum width
+        
+        for name, stats in sorted_markers:
+            total = stats.get('total_ms', 0)
+            count = stats.get('count', 1)
+            avg = stats.get('avg_ms', total)
+            
+            if count > 1:
+                lines.append(f"  {name:<{max_name_len}} {total:>8.2f}ms  ({count}× avg {avg:.2f}ms)")
+            else:
+                lines.append(f"  {name:<{max_name_len}} {total:>8.2f}ms")
+        
+        lines.append(f"  {'─' * (max_name_len + 20)}")
+        lines.append(f"  {'total':<{max_name_len}} {self.total_ms:>8.2f}ms")
+        return "\n".join(lines)
+    
+    def hierarchical_breakdown(self, use_color: bool = True) -> str:
+        """Show markers in a hierarchical tree based on parent relationships."""
+        if not self.markers:
+            return "  (no markers captured)"
+        
+        # ANSI color codes
+        if use_color:
+            RESET = "\033[0m"
+            DIM = "\033[2m"
+            BOLD = "\033[1m"
+            YELLOW = "\033[33m"
+            GREEN = "\033[32m"
+            RED = "\033[91m"
+            ORANGE = "\033[38;5;208m"
+            GRAY = "\033[90m"
+            CYAN = "\033[36m"
+        else:
+            RESET = DIM = BOLD = YELLOW = GREEN = RED = ORANGE = GRAY = CYAN = ""
+        
+        def time_color(ms: float) -> str:
+            """Get color based on absolute time thresholds."""
+            if ms > 500:
+                return RED
+            elif ms > 20:
+                return ORANGE
+            elif ms > 5:
+                return YELLOW
+            else:
+                return GREEN
+        
+        # Build parent->children mapping from the parents data
+        children_of = {}  # parent_name -> list of child names
+        root_markers = []  # markers with no parent
+        
+        for name, stats in self.markers.items():
+            parents = stats.get('parents', {})
+            if not parents:
+                root_markers.append(name)
+            else:
+                # Use the most common parent
+                parent = max(parents.keys(), key=lambda p: parents[p])
+                if parent not in children_of:
+                    children_of[parent] = []
+                children_of[parent].append(name)
+        
+        lines = []
+        NAME_COL_WIDTH = 40  # Fixed width for name+tree column
+        
+        def format_marker(name: str, depth: int = 0, prefix_chars: str = "") -> None:
+            """Recursively format a marker and its children."""
+            stats = self.markers.get(name, {})
+            total = stats.get('total_ms', 0)
+            count = stats.get('count', 1)
+            tc = time_color(total)
+            
+            # Calculate the visible length of prefix + name
+            visible_name = f"{prefix_chars}{name}"
+            visible_len = len(visible_name)
+            
+            # Apply colors to the line
+            colored_prefix = f"{DIM}{prefix_chars}{RESET}" if prefix_chars else ""
+            colored_name = f"{CYAN}{name}{RESET}"
+            
+            # Pad to fixed width for alignment
+            padding = " " * max(1, NAME_COL_WIDTH - visible_len)
+            
+            # Always show count
+            count_str = f"  {GRAY}({count}x){RESET}"
+            
+            line = f"  {colored_prefix}{colored_name}{padding}{tc}{BOLD}{total:>8.2f}ms{RESET}{count_str}"
+            lines.append(line)
+            
+            # Process children sorted by total_ms descending
+            if name in children_of:
+                child_list = sorted(
+                    children_of[name],
+                    key=lambda c: self.markers.get(c, {}).get('total_ms', 0),
+                    reverse=True
+                )
+                for i, child in enumerate(child_list):
+                    is_last = (i == len(child_list) - 1)
+                    # Build prefix for children
+                    if depth == 0:
+                        child_prefix = "└──" if is_last else "├──"
+                    else:
+                        # Replace the last connector with continuation or space
+                        base = prefix_chars[:-3]  # Remove last connector
+                        if prefix_chars.endswith("└──"):
+                            base += "   "
+                        else:
+                            base += "│  "
+                        child_prefix = base + ("└──" if is_last else "├──")
+                    
+                    format_marker(child, depth + 1, child_prefix)
+        
+        # Sort root markers by total_ms descending
+        root_markers.sort(key=lambda n: self.markers.get(n, {}).get('total_ms', 0), reverse=True)
+        
+        # Add header
+        header = f"  {DIM}{'Marker':<{NAME_COL_WIDTH}}{'Time':>10}  {'Calls':>8}{RESET}"
+        lines.append(header)
+        sep_line = f"  {DIM}{'─' * NAME_COL_WIDTH}{'─' * 10}  {'─' * 8}{RESET}"
+        lines.append(sep_line)
+        
+        for root in root_markers:
+            format_marker(root)
+        
+        lines.append(sep_line)
+        lines.append(f"  {BOLD}{'total':<{NAME_COL_WIDTH}}{self.total_ms:>8.2f}ms{RESET}")
         return "\n".join(lines)
 
 
@@ -217,34 +358,12 @@ def run_pipeline(xml_content: str, backend: str = 'cpu', shared_vertices: bool =
     gxml_result = run(xml_content, config=config)
     total_ms = (time.perf_counter() - t_start) * 1000
     
-    # Helper to extract timing from markers
-    def get_ms(name: str) -> float:
-        if gxml_result.timings and name in gxml_result.timings:
-            return gxml_result.timings[name].get('total_ms', 0.0)
-        return 0.0
-    
     # Build TimingResult from marker data
-    result = TimingResult(backend=backend)
-    
-    # Top-level timings
-    result.parse_ms = get_ms('parse')
-    result.layout_ms = get_ms('layout')
-    result.render_ms = get_ms('render')
-    result.total_ms = total_ms
-    
-    # Layout pass breakdown
-    result.measure_ms = get_ms('measure_pass')
-    result.pre_layout_ms = get_ms('pre_layout_pass')
-    result.layout_pass_ms = get_ms('layout_pass')
-    result.post_layout_ms = get_ms('post_layout_pass')
-    
-    # Solver breakdown
-    result.intersection_ms = get_ms('intersection_solver')
-    result.face_solver_ms = get_ms('face_solver')
-    result.geometry_ms = get_ms('geometry_builder')
-    
-    # Store raw markers for detailed analysis
-    result.raw_markers = gxml_result.timings or {}
+    result = TimingResult(
+        backend=backend,
+        total_ms=total_ms,
+        markers=gxml_result.timings or {},
+    )
     
     # Stats
     if gxml_result.stats:
@@ -350,86 +469,190 @@ def assert_performance(
 # Printing Utilities
 # =============================================================================
 
-def print_benchmark_result(result: BenchmarkResult, verbose: bool = False):
-    """Print a single benchmark result."""
+def print_benchmark_result(result: BenchmarkResult, detailed: bool = False, hierarchical: bool = False):
+    """
+    Print a single benchmark result.
+    
+    Args:
+        result: Benchmark result to print
+        detailed: If True, show all markers flat. If False, show summary only.
+        hierarchical: If True, show markers in tree view (overrides detailed).
+    """
     print(f"\n--- {result.backend.upper()} Backend ---")
     print(f"  Median: {result.median_ms:.1f}ms")
     print(f"  Mean:   {result.mean_ms:.1f}ms (±{result.std_ms:.1f}ms)")
     print(f"  Range:  {result.min_ms:.1f}ms - {result.max_ms:.1f}ms")
     
-    if verbose and result.all_results:
+    if result.all_results:
         r = result.all_results[0]
-        print(f"\n  Stage Breakdown (first run):")
-        print(r.breakdown_str())
+        if hierarchical:
+            print(f"\n  Timing Hierarchy (first run):")
+            print(r.hierarchical_breakdown())
+        else:
+            print(f"\n  Timing Breakdown (first run):")
+            print(r.breakdown_str(detailed=detailed))
         print(f"\n  Stats:")
         print(f"    Panels: {r.panel_count}")
         print(f"    Intersections: {r.intersection_count}")
         print(f"    Polygons: {r.polygon_count}")
 
 
-def print_timing_breakdown(results: List[TimingResult]):
-    """Print detailed timing breakdown averaged across runs."""
+def print_timing_breakdown(results: List[TimingResult], detailed: bool = False):
+    """
+    Print timing breakdown averaged across runs.
+    
+    Args:
+        results: List of TimingResult from multiple runs
+        detailed: If True, show all markers. If False, show summary only.
+    """
     if not results:
         return
-        
+    
     n = len(results)
-    avg = lambda attr: sum(getattr(r, attr) for r in results) / n
+    
+    # Collect all marker names across all runs
+    all_markers = set()
+    for r in results:
+        all_markers.update(r.markers.keys())
+    
+    if not all_markers:
+        print(f"\n  (no markers captured)")
+        return
+    
+    # Calculate averages for each marker
+    marker_avgs = {}
+    for name in all_markers:
+        totals = [r.get_ms(name) for r in results]
+        marker_avgs[name] = sum(totals) / n
+    
+    # Sort by average time descending
+    sorted_markers = sorted(marker_avgs.items(), key=lambda x: x[1], reverse=True)
+    
+    # Filter for display
+    if not detailed:
+        # Show only top-level markers in simplified view
+        top_level = ['parse', 'layout', 'render']
+        sorted_markers = [(n, v) for n, v in sorted_markers if n in top_level]
     
     print(f"\n  Average Breakdown ({n} runs):")
-    print(f"    Parse:              {avg('parse_ms'):>7.1f}ms")
-    print(f"    Layout:             {avg('layout_ms'):>7.1f}ms")
-    print(f"      ├─ Measure:       {avg('measure_ms'):>7.1f}ms")
-    print(f"      ├─ Pre-layout:    {avg('pre_layout_ms'):>7.1f}ms")
-    print(f"      ├─ Layout pass:   {avg('layout_pass_ms'):>7.1f}ms")
-    print(f"      └─ Post-layout:   {avg('post_layout_ms'):>7.1f}ms")
-    print(f"         ├─ Intersect:  {avg('intersection_ms'):>7.1f}ms")
-    print(f"         ├─ Face solve: {avg('face_solver_ms'):>7.1f}ms")
-    print(f"         └─ Geometry:   {avg('geometry_ms'):>7.1f}ms")
-    print(f"    Render:             {avg('render_ms'):>7.1f}ms")
-    print(f"    Total:              {avg('total_ms'):>7.1f}ms")
+    
+    # Find max name length for alignment
+    max_name_len = max(len(name) for name, _ in sorted_markers) if sorted_markers else 10
+    max_name_len = max(max_name_len, 10)
+    
+    for name, avg_ms in sorted_markers:
+        if avg_ms > 0.001:  # Skip near-zero markers
+            print(f"    {name:<{max_name_len}} {avg_ms:>8.2f}ms")
+    
+    # Total
+    avg_total = sum(r.total_ms for r in results) / n
+    print(f"    {'─' * (max_name_len + 12)}")
+    print(f"    {'total':<{max_name_len}} {avg_total:>8.2f}ms")
 
 
-def print_comparison_table(results: Dict[str, BenchmarkResult], verbose: bool = False):
-    """Print a comparison table of multiple backend results."""
+def print_comparison_table(results: Dict[str, BenchmarkResult], detailed: bool = False):
+    """
+    Print a side-by-side comparison table of backend results.
+    
+    Args:
+        results: Dict mapping backend name to BenchmarkResult
+        detailed: If True, show all markers with full stats. If False, show summary only.
+    """
     if not results:
         return
     
     backends = list(results.keys())
     first = results[backends[0]]
     
-    print(f"\n{'='*60}")
-    print(f"BENCHMARK COMPARISON ({first.iterations} iterations)")
-    print(f"{'='*60}")
+    # ANSI colors
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    GREEN = "\033[32m"
+    RED = "\033[91m"
+    YELLOW = "\033[33m"
+    ORANGE = "\033[38;5;208m"
     
-    # Header
-    header = f"{'Metric':<15}"
+    print(f"\n{DIM}{'='*60}{RESET}")
+    print(f"{BOLD}BACKEND COMPARISON{RESET} ({first.panel_count} panels, {first.intersection_count} intersections)")
+    print(f"{DIM}{'='*60}{RESET}")
+    
+    # Key markers to compare (in display order)
+    key_markers = [
+        ('total', 'Total'),
+        ('validate', '  Validate'),
+        ('parse', '  Parse'),
+        ('layout', '  Layout'),
+        ('render', '  Render'),
+        ('intersection_solver', 'Intersection Solver'),
+        ('face_solver', 'Face Solver'),
+        ('geometry_builder', 'Geometry Builder'),
+    ]
+    
+    # Get average times for each marker per backend
+    def get_avg_ms(bench_result: BenchmarkResult, marker: str) -> float:
+        if marker == 'total':
+            return bench_result.mean_ms
+        if not bench_result.all_results:
+            return 0.0
+        totals = [r.get_ms(marker) for r in bench_result.all_results]
+        return sum(totals) / len(totals) if totals else 0.0
+    
+    # Header row
+    header = f"  {'Stage':<20}"
     for b in backends:
-        header += f"{b.upper():>12}"
+        header += f"{BOLD}{b.upper():>12}{RESET}"
     if len(backends) >= 2:
-        header += f"{'Speedup':>12}"
+        header += f"     {'Delta':>8}"
     print(header)
-    print("-" * 60)
+    print(f"  {'-'*56}")
     
-    # Median row
-    row = f"{'Median':<15}"
-    values = []
-    for b in backends:
-        val = results[b].median_ms
-        values.append(val)
-        row += f"{val:>10.1f}ms"
-    if len(values) >= 2 and values[-1] > 0:
-        speedup = values[0] / values[-1]
-        row += f"{speedup:>11.2f}x"
-    print(row)
+    # Data rows
+    for marker, label in key_markers:
+        values = [get_avg_ms(results[b], marker) for b in backends]
+        
+        # Skip if all zeros
+        if all(v == 0 for v in values):
+            continue
+        
+        row = f"  {label:<20}"
+        for val in values:
+            # Color based on time
+            if val > 100:
+                color = RED
+            elif val > 10:
+                color = YELLOW
+            elif val > 0:
+                color = GREEN
+            else:
+                color = DIM
+            row += f"{color}{val:>10.1f}ms{RESET}"
+        
+        # Delta column
+        if len(values) >= 2 and values[0] > 0:
+            diff_pct = ((values[-1] - values[0]) / values[0]) * 100
+            if abs(diff_pct) < 5:
+                delta_color = DIM
+            elif diff_pct < 0:
+                delta_color = GREEN  # C is faster
+            else:
+                delta_color = RED    # C is slower
+            row += f"     {delta_color}{diff_pct:>+7.1f}%{RESET}"
+        
+        print(row)
     
-    # Stats
-    if first.panel_count:
-        print(f"\n  Panels: {first.panel_count}")
-        print(f"  Intersections: {first.intersection_count}")
+    # Detailed stats section - show all markers with full statistics
+    if detailed:
+        print(f"\n{DIM}{'─'*60}{RESET}")
+        print(f"{BOLD}DETAILED STATS{RESET}")
+        print(f"{DIM}{'─'*60}{RESET}")
+        
+        for backend in backends:
+            bench = results[backend]
+            print(f"\n{BOLD}{backend.upper()}{RESET} ({bench.iterations} iterations, median={bench.median_ms:.1f}ms, std={bench.std_ms:.1f}ms)")
+            
+            # Get representative result (first one has the marker data)
+            if bench.all_results:
+                print(bench.all_results[0].hierarchical_breakdown(use_color=True))
     
-    # Detailed breakdown if verbose
-    if verbose:
-        for backend, bench_result in results.items():
-            if bench_result.all_results:
-                print(f"\n--- {backend.upper()} Stage Breakdown ---")
-                print_timing_breakdown(bench_result.all_results)
+    print()

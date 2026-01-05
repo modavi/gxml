@@ -3,5 +3,9 @@
     "python.testing.pytestArgs": [
         "tests"
     ],
-    "python.testing.cwd": "${workspaceFolder}"
+    "python.testing.cwd": "${workspaceFolder}",
+    "files.exclude": {
+        "venv/": true,
+        "build/": true
+    }
 }

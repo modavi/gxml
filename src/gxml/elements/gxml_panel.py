@@ -7,7 +7,7 @@ from enum import IntEnum
 from typing import Optional, Tuple
 from elements.gxml_base_element import GXMLLayoutElement
 from gxml_types import *
-from gxml_profile import *
+from profiling import *
 from mathutils.quad_interpolator import QuadInterpolator, batch_bilinear_transform
 from mathutils.gxml_ray import GXMLRay
 import mathutils.gxml_math as GXMLMath
@@ -110,6 +110,7 @@ class GXMLPanel(GXMLLayoutElement):
         super().parse(ctx)
         self.thickness = float(ctx.getAttribute("thickness", self.thickness))
         
+    @profile("transform_point")
     def transform_point(self, point):
         # Use combined bilinear + transform when available
         t, s, z = point[0], point[1], point[2] if len(point) > 2 else 0.0
@@ -217,13 +218,11 @@ class GXMLPanel(GXMLLayoutElement):
         ISolver = get_intersection_solver()
         FSolver = get_face_solver()
         
-        push_perf_marker("intersection_solver")
-        intersection_solution = ISolver.solve(all_panels)
-        pop_perf_marker()
+        with perf_marker("intersection_solver"):
+            intersection_solution = ISolver.solve(all_panels)
         
-        push_perf_marker("face_solver")
-        panel_faces = FSolver.solve(intersection_solution)
-        pop_perf_marker()
+        with perf_marker("face_solver"):
+            panel_faces = FSolver.solve(intersection_solution)
         
         # Cache on parent for sibling panels to reuse
         solution = (intersection_solution, panel_faces, False)  # False = not yet built
@@ -231,9 +230,8 @@ class GXMLPanel(GXMLLayoutElement):
         
         return solution
         
+    @profile("on_post_layout")
     def on_post_layout(self):
-        push_perf_marker("on_post_layout")
-        
         from elements.solvers import (
             get_geometry_builder, 
             get_geometry_backend,
@@ -251,9 +249,8 @@ class GXMLPanel(GXMLLayoutElement):
         if get_solver_backend() == 'taichi':
             builder = get_full_geometry_builder()
             if not already_built:
-                push_perf_marker("geometry_builder")
-                builder.build_all(panel_faces, intersection_solution)
-                pop_perf_marker()
+                with perf_marker("geometry_builder"):
+                    builder.build_all(panel_faces, intersection_solution)
                 setattr(parent, cache_key, (intersection_solution, panel_faces, True))
         else:
             builder = get_geometry_builder()
@@ -262,18 +259,14 @@ class GXMLPanel(GXMLLayoutElement):
             # CPU backend: build per-panel as before
             if get_geometry_backend() == 'gpu' and not already_built:
                 # Build all panels at once (GPU batching benefit)
-                push_perf_marker("geometry_builder")
-                builder.build_all(panel_faces, intersection_solution)
-                pop_perf_marker()
+                with perf_marker("geometry_builder"):
+                    builder.build_all(panel_faces, intersection_solution)
                 # Mark as built so subsequent panels skip
                 setattr(parent, cache_key, (intersection_solution, panel_faces, True))
             elif get_geometry_backend() == 'cpu':
                 # CPU path: build per-panel (original behavior)
-                push_perf_marker("geometry_builder")
-                builder.build(self, panel_faces, intersection_solution)
-                pop_perf_marker()
-            
-        pop_perf_marker()
+                with perf_marker("geometry_builder"):
+                    builder.build(self, panel_faces, intersection_solution)
     
     def render(self, renderContext):
         if not self.dynamicChildren:
@@ -286,6 +279,7 @@ class GXMLPanel(GXMLLayoutElement):
             for child in self.dynamicChildren:
                 child.render(renderContext)
     
+    @profile("create_panel_side")
     def create_panel_side(self, subId, side, corners=None):
         """
         Create a panel side (face) as a dynamic child GXMLQuad.
@@ -300,8 +294,6 @@ class GXMLPanel(GXMLLayoutElement):
         Returns:
             GXMLQuad representing the face
         """
-        push_perf_marker("create_panel_side")
-        
         if corners is None:
             corners = [(0, 0), (1, 0), (1, 1), (0, 1)]
         
@@ -381,7 +373,6 @@ class GXMLPanel(GXMLLayoutElement):
         # Cache the world points we already computed to avoid recomputing in render()
         quad._cached_world_vertices = worldPoints
         
-        pop_perf_marker()
         return quad
     
     def get_local_points_from_side(self, side):

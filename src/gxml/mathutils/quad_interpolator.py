@@ -7,6 +7,8 @@ except ImportError:
     _c_bilinear_interpolate = None
     _c_batch_bilinear_transform = None
 
+from gxml_profile import profile
+
 
 class QuadInterpolator(object):
     """
@@ -59,6 +61,7 @@ class QuadInterpolator(object):
         return (px, py, point[2] + pz)
 
 
+@profile("batch_bilinear_transform")
 def batch_bilinear_transform(points_with_offsets, quad_points, matrix):
     """
     Perform bilinear interpolation + matrix transform in a single C call for multiple points.

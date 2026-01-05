@@ -3,6 +3,7 @@
 """
 
 import xml.etree.ElementTree as ET
+from profiling import profile
 from elements.gxml_root import GXMLRoot
 from elements.gxml_panel import GXMLPanel
 from gxml_types import *
@@ -55,6 +56,7 @@ class GXMLParser(object):
         "panel": GXMLPanel  # Use new intersection solver
     }
     
+    @profile("parse")
     def parse(gxml):
         root = ET.fromstring(gxml)
         

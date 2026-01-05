@@ -5,11 +5,11 @@ This module tests the full end-to-end pipeline (parse → layout → render)
 across various XML sizes to catch performance regressions.
 
 Usage:
-    # Run via pytest (recommended)
+    # Run via pytest
     pytest tests/performance/test_perf_pipeline.py -v
     
-    # Run standalone with detailed output
-    python tests/performance/test_perf_pipeline.py
+    # For detailed profiling output, use the profile script:
+    python scripts/profile_xml.py tests/performance/xml/200Panels.xml
 """
 import sys
 from pathlib import Path
@@ -23,13 +23,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "src" / "gxml"))
 
-from tests.test_fixtures.profiling import (
+from gxml.profiling import (
     run_benchmark,
     assert_performance,
     check_backends,
     is_c_available,
     print_benchmark_result,
-    print_comparison_table,
 )
 
 
@@ -93,7 +92,7 @@ class TestPipelinePerformance:
     def test_cpu_performance(self, name, xml_file, baseline_ms):
         """Test CPU backend performance for each test case."""
         xml_content = load_xml(xml_file)
-        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS)
+        result = run_benchmark(xml_content, backend='cpu', warmup=WARMUP_RUNS, iterations=ITERATIONS, verbose=False)
         assert_performance(result, baseline_ms, REGRESSION_THRESHOLD, name)
     
     @perf_xfail
@@ -103,7 +102,7 @@ class TestPipelinePerformance:
             pytest.skip("C extension not available")
         
         xml_content = load_xml("200Panels.xml")
-        result = run_benchmark(xml_content, 'c', WARMUP_RUNS, ITERATIONS)
+        result = run_benchmark(xml_content, backend='c', warmup=WARMUP_RUNS, iterations=ITERATIONS, verbose=False)
         assert_performance(result, 700, REGRESSION_THRESHOLD, "200 panels (C)")
     
     @perf_xfail
@@ -114,8 +113,8 @@ class TestPipelinePerformance:
         
         xml_content = load_xml("200Panels.xml")
         
-        cpu_result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS)
-        c_result = run_benchmark(xml_content, 'c', WARMUP_RUNS, ITERATIONS)
+        cpu_result = run_benchmark(xml_content, backend='cpu', warmup=WARMUP_RUNS, iterations=ITERATIONS, verbose=False)
+        c_result = run_benchmark(xml_content, backend='c', warmup=WARMUP_RUNS, iterations=ITERATIONS, verbose=False)
         
         # C extension should not be more than 20% slower than CPU
         # (allowing variance since they're comparable in performance)
@@ -127,6 +126,34 @@ class TestPipelinePerformance:
             f"  CPU time: {cpu_result.median_ms:.1f}ms\n"
             f"  C time:   {c_result.median_ms:.1f}ms\n"
             f"  Ratio:    {ratio:.2f}x (max allowed: {max_ratio}x)"
+        )
+    
+    @perf_xfail
+    def test_validation_overhead_under_1_percent(self):
+        """Ensure XSD validation overhead stays under 1% of total pipeline cost."""
+        xml_content = load_xml("200Panels.xml")
+        
+        # Run with profiling to get validation marker timing
+        result = run_benchmark(xml_content, backend='cpu', warmup=WARMUP_RUNS, iterations=ITERATIONS, verbose=False)
+        
+        # Get validation time from markers (from the first timing result)
+        assert result.all_results, "No timing results captured"
+        timing = result.all_results[0]
+        markers = timing.markers
+        assert 'validate' in markers, "validate marker not found in profiling output"
+        
+        validate_ms = markers['validate']['avg_ms']
+        total_ms = result.median_ms
+        
+        # Validation should be less than 1% of total
+        max_percentage = 1.0
+        actual_percentage = (validate_ms / total_ms) * 100
+        
+        assert actual_percentage < max_percentage, (
+            f"XSD validation overhead too high!\n"
+            f"  Validation time: {validate_ms:.3f}ms\n"
+            f"  Total time:      {total_ms:.1f}ms\n"
+            f"  Percentage:      {actual_percentage:.2f}% (max allowed: {max_percentage}%)"
         )
     
     @perf_xfail
@@ -182,7 +209,7 @@ class TestOutputFormatPerformance:
     def test_shared_vertices_200panels(self):
         """Test shared_vertices output on 200 panels."""
         xml_content = load_xml("200Panels.xml")
-        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=True)
+        result = run_benchmark(xml_content, backend='cpu', warmup=WARMUP_RUNS, iterations=ITERATIONS, shared_vertices=True, verbose=False)
         # Shared vertices mode baseline
         assert_performance(result, 800, REGRESSION_THRESHOLD, "200 panels (shared_vertices)")
     
@@ -190,7 +217,7 @@ class TestOutputFormatPerformance:
     def test_per_face_vertices_200panels(self):
         """Test per-face vertices output on 200 panels."""
         xml_content = load_xml("200Panels.xml")
-        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=False)
+        result = run_benchmark(xml_content, backend='cpu', warmup=WARMUP_RUNS, iterations=ITERATIONS, shared_vertices=False, verbose=False)
         # Per-face vertices mode baseline
         assert_performance(result, 800, REGRESSION_THRESHOLD, "200 panels (per-face)")
     
@@ -199,8 +226,8 @@ class TestOutputFormatPerformance:
         """Ensure shared_vertices mode is not significantly slower than per-face vertices."""
         xml_content = load_xml("200Panels.xml")
         
-        per_face_result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=False)
-        shared_result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=True)
+        per_face_result = run_benchmark(xml_content, backend='cpu', warmup=WARMUP_RUNS, iterations=ITERATIONS, shared_vertices=False, verbose=False)
+        shared_result = run_benchmark(xml_content, backend='cpu', warmup=WARMUP_RUNS, iterations=ITERATIONS, shared_vertices=True, verbose=False)
         
         # Shared vertices should not be more than 30% slower
         max_ratio = 1.3
@@ -220,7 +247,7 @@ class TestOutputFormatPerformance:
             pytest.skip("C extension not available")
         
         xml_content = load_xml("200Panels.xml")
-        result = run_benchmark(xml_content, 'c', WARMUP_RUNS, ITERATIONS, shared_vertices=True)
+        result = run_benchmark(xml_content, backend='c', warmup=WARMUP_RUNS, iterations=ITERATIONS, shared_vertices=True, verbose=False)
         
         assert result.median_ms < 800 * REGRESSION_THRESHOLD, f"200 panels (shared_vertices + C): {result.median_ms:.1f}ms exceeds threshold"
     
@@ -228,71 +255,6 @@ class TestOutputFormatPerformance:
     def test_shared_vertices_75panels(self):
         """Test shared_vertices output on 75 panels."""
         xml_content = load_xml("75Panels.xml")
-        result = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS, shared_vertices=True)
+        result = run_benchmark(xml_content, backend='cpu', warmup=WARMUP_RUNS, iterations=ITERATIONS, shared_vertices=True, verbose=False)
         # Should complete within reasonable time
         assert_performance(result, 400, REGRESSION_THRESHOLD, "75 panels (shared_vertices)")
-
-
-# =============================================================================
-# Standalone Execution
-# =============================================================================
-
-def main():
-    """Run benchmarks with detailed output."""
-    print("=" * 70)
-    print("GXML PIPELINE PERFORMANCE TESTS")
-    print("=" * 70)
-    
-    # Check backends
-    availability = check_backends()
-    print("\nBackend Availability:")
-    for backend, available in availability.items():
-        status = "✓" if available else "✗"
-        print(f"  {backend.upper():8} : {status}")
-    
-    # Run benchmarks
-    for name, xml_file, baseline_ms in TEST_CASES:
-        xml_path = XML_DIR / xml_file
-        if not xml_path.exists():
-            print(f"\n⚠ Skipping {name}: {xml_file} not found")
-            continue
-        
-        xml_content = xml_path.read_text()
-        
-        print(f"\n{'='*70}")
-        print(f"{name.upper()} ({xml_file})")
-        print(f"{'='*70}")
-        print(f"Baseline: {baseline_ms}ms | Max allowed: {baseline_ms * REGRESSION_THRESHOLD:.0f}ms")
-        
-        results = {}
-        
-        # CPU benchmark
-        print(f"\nBenchmarking CPU...", end=" ", flush=True)
-        results['cpu'] = run_benchmark(xml_content, 'cpu', WARMUP_RUNS, ITERATIONS)
-        print("done")
-        print_benchmark_result(results['cpu'], verbose=True)
-        
-        # C extension benchmark (only for larger tests)
-        if availability['c'] and baseline_ms >= 300:
-            print(f"\nBenchmarking C extension...", end=" ", flush=True)
-            results['c'] = run_benchmark(xml_content, 'c', WARMUP_RUNS, ITERATIONS)
-            print("done")
-            print_benchmark_result(results['c'], verbose=True)
-        
-        # Comparison table with stage breakdown
-        if len(results) > 1:
-            print_comparison_table(results, verbose=True)
-        
-        # Pass/fail
-        cpu_ok = results['cpu'].median_ms < baseline_ms * REGRESSION_THRESHOLD
-        status = "✓ PASS" if cpu_ok else "✗ FAIL"
-        print(f"\nStatus: {status}")
-    
-    print(f"\n{'='*70}")
-    print("Complete!")
-    print(f"{'='*70}")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

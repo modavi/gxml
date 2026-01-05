@@ -44,7 +44,7 @@ Binary Format v4:
 import struct
 import numpy as np
 from render_engines.base_render_context import BaseRenderContext
-from gxml_profile import push_perf_marker, pop_perf_marker
+from profiling import perf_marker
 
 
 def hex_to_rgb(hex_color: str) -> tuple:
@@ -204,9 +204,8 @@ class BinaryRenderContext(BaseRenderContext):
         
         if self.shared_vertices:
             # Shared vertices mode: deduplicate vertices and add triangles
-            push_perf_marker('shared_vertex_dedup')
-            indices = [self._get_or_create_vertex(*v) for v in verts]
-            pop_perf_marker()
+            with perf_marker('shared_vertex_dedup'):
+                indices = [self._get_or_create_vertex(*v) for v in verts]
             
             # Fan triangulation
             triangle_count = len(indices) - 2
@@ -232,10 +231,8 @@ class BinaryRenderContext(BaseRenderContext):
     
     def get_output(self) -> bytes:
         """Get collected geometry as binary data."""
-        push_perf_marker('binary_to_bytes')
-        result = self.to_bytes()
-        pop_perf_marker()
-        return result
+        with perf_marker('binary_to_bytes'):
+            return self.to_bytes()
     
     def to_bytes(self) -> bytes:
         """Convert collected geometry to binary format."""

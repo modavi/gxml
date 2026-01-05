@@ -50,18 +50,51 @@ Usage:
 
 from dataclasses import dataclass, field
 from typing import Optional, Any, Literal, Dict, Union
+from pathlib import Path
 import time
+
+from lxml import etree
 
 from gxml_parser import GXMLParser
 from gxml_layout import GXMLLayout
 from gxml_render import GXMLRender
-from gxml_profile import (
+from profiling import (
     enable_profiling, 
     reset_profile, 
     get_profile_results,
-    push_perf_marker,
-    pop_perf_marker,
+    perf_marker,
 )
+
+
+# =============================================================================
+# XSD Schema Validation
+# =============================================================================
+
+# Load schema once at module import
+_SCHEMA_PATH = Path(__file__).parent.parent.parent / 'misc' / 'gxml.xsd'
+_SCHEMA: Optional[etree.XMLSchema] = None
+
+
+def _get_schema() -> etree.XMLSchema:
+    """Lazy-load the XSD schema."""
+    global _SCHEMA
+    if _SCHEMA is None:
+        schema_doc = etree.parse(str(_SCHEMA_PATH))
+        _SCHEMA = etree.XMLSchema(schema_doc)
+    return _SCHEMA
+
+
+def validate_xml(xml: str) -> None:
+    """
+    Validate XML against the GXML schema.
+    
+    Raises:
+        etree.XMLSyntaxError: If XML is malformed
+        etree.DocumentInvalid: If XML doesn't match schema
+    """
+    schema = _get_schema()
+    doc = etree.fromstring(xml.encode())
+    schema.assertValid(doc)
 
 
 # =============================================================================
@@ -90,14 +123,11 @@ class GXMLConfig:
         
         profile: Enable timing profiling of pipeline stages.
             When True, returns timing data from all instrumented code sections.
-            Markers are placed throughout the codebase using push_perf_marker/pop_perf_marker.
-        
-        validate: Validate XML structure before processing.
+            Markers are placed throughout the codebase using perf_marker context manager.
     """
     backend: Backend = 'cpu'
     mesh_render_context: Any = None
     profile: bool = False
-    validate: bool = False
 
 
 @dataclass
@@ -199,6 +229,7 @@ def run(
         result = run(xml, profile=True)
         print(result.timings)
     """
+    
     # Build effective config
     if config is None:
         config = GXMLConfig()
@@ -217,57 +248,58 @@ def run(
         enable_profiling(True)
     
     try:
-        # Set backend
-        from elements.solvers import set_solver_backend
-        set_solver_backend(config.backend)
-        
-        # Parse: GXML string → GOM
-        push_perf_marker("parse")
-        gom = GXMLParser.parse(xml)
-        pop_perf_marker()
-        
-        # Layout: compute positions, intersections, geometry
-        push_perf_marker("layout")
-        GXMLLayout.layout(gom)
-        pop_perf_marker()
-        
-        # Render: GOM → mesh
-        mesh = None
-        if config.mesh_render_context is False:
-            render_ctx = None
-        elif config.mesh_render_context is None:
-            from render_engines.binary_render_context import BinaryRenderContext
-            render_ctx = BinaryRenderContext()
-        else:
-            render_ctx = config.mesh_render_context
-        
-        if render_ctx is not None:
-            push_perf_marker("render")
-            GXMLRender.render(gom, render_ctx)
-            pop_perf_marker()
+        with perf_marker("run"):
+            # Set backend
+            from elements.solvers import set_solver_backend
+            set_solver_backend(config.backend)
             
-            # Get mesh from context
-            if hasattr(render_ctx, 'get_output'):
-                mesh = render_ctx.get_output()
+            # Validate: Check XML against schema
+            with perf_marker("validate"):
+                validate_xml(xml)
+            
+            # Parse: GXML string → GOM
+            gom = GXMLParser.parse(xml)
+            
+            # Layout: compute positions, intersections, geometry
+            GXMLLayout.layout(gom)
+            
+            # Render: GOM → mesh
+            mesh = None
+            if config.mesh_render_context is False:
+                render_ctx = None
+            elif config.mesh_render_context is None:
+                from render_engines.binary_render_context import BinaryRenderContext
+                render_ctx = BinaryRenderContext()
+            else:
+                render_ctx = config.mesh_render_context
+            
+            if render_ctx is not None:
+                GXMLRender.render(gom, render_ctx)
+                
+                # Get mesh from context
+                if hasattr(render_ctx, 'get_output'):
+                    mesh = render_ctx.get_output()
+            
+            # Count panels
+            def count_panels(element):
+                count = 1 if type(element).__name__ == 'GXMLPanel' else 0
+                for child in element.children:
+                    count += count_panels(child)
+                return count
+            
+            stats = {
+                'panel_count': count_panels(gom),
+                'intersection_count': 0,
+                'polygon_count': 0,
+            }
+            if hasattr(gom, '_panel_solution_cache'):
+                intersection_solution, _, _ = gom._panel_solution_cache
+                stats['intersection_count'] = len(intersection_solution.intersections)
+            
+        # End of perf_marker("GXML::Run") block
         
-        # Collect timings and stats
+        # Collect timings AFTER GXML::Run marker ends
         timings = get_profile_results() if config.profile else None
-        
-        # Count panels
-        def count_panels(element):
-            count = 1 if type(element).__name__ == 'GXMLPanel' else 0
-            for child in element.children:
-                count += count_panels(child)
-            return count
-        
-        stats = {
-            'panel_count': count_panels(gom),
-            'intersection_count': 0,
-            'polygon_count': 0,
-        }
-        if hasattr(gom, '_panel_solution_cache'):
-            intersection_solution, _, _ = gom._panel_solution_cache
-            stats['intersection_count'] = len(intersection_solution.intersections)
         
         return GXMLResult(
             gom=gom,

@@ -9,7 +9,7 @@ from enum import Enum, auto
 from collections import deque
 
 from gxml_types import *
-from gxml_profile import *
+from profiling import *
 # Import GXMLTransform directly to avoid circular import issues with import *
 from mathutils.gxml_transform import GXMLTransform
 

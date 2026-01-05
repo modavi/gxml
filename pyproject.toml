@@ -25,7 +25,7 @@ classifiers = [
 ]
 
 dependencies = [
-    # No required dependencies - pure Python with optional C extension
+    "lxml>=4.9.0",  # XSD schema validation
 ]
 
 [project.optional-dependencies]
