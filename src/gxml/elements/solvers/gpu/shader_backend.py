@@ -13,7 +13,7 @@ The shader backends handle:
 3. Geometry building (vertex/index generation)
 
 Usage:
-    from gxml.gpu.shader_backend import get_shader_backend
+    from elements.solvers.gpu.shader_backend import get_shader_backend
     
     backend = get_shader_backend()
     intersections = backend.find_intersections(starts, ends)
@@ -26,8 +26,8 @@ from abc import ABC, abstractmethod
 from typing import Tuple, Optional, List
 from pathlib import Path
 
-# Shader source directory
-SHADER_DIR = Path(__file__).parent.parent / "shaders"
+# Shader source directory (now in native/shaders/)
+SHADER_DIR = Path(__file__).parent.parent / "native" / "shaders"
 
 
 class ShaderBackend(ABC):
@@ -270,7 +270,7 @@ class MetalBackend(ShaderBackend):
                     source = f.read()
             else:
                 # Use the source from metal_geometry.py
-                from gxml.gpu.metal_geometry import METAL_SHADER_SOURCE
+                from .metal_geometry import METAL_SHADER_SOURCE
                 source = METAL_SHADER_SOURCE
             
             options = Metal.MTLCompileOptions.alloc().init()
@@ -323,7 +323,7 @@ class MetalBackend(ShaderBackend):
             return CPUBackend().transform_points(matrices, points)
         
         try:
-            from gxml.gpu.metal_geometry import MetalGeometryAccelerator
+            from .metal_geometry import MetalGeometryAccelerator
             accel = MetalGeometryAccelerator()
             return accel.transform_points_batch(matrices, points)
         except Exception:
@@ -344,7 +344,7 @@ class MetalBackend(ShaderBackend):
             )
         
         try:
-            from gxml.gpu.metal_geometry import MetalGeometryAccelerator
+            from .metal_geometry import MetalGeometryAccelerator
             accel = MetalGeometryAccelerator()
             return accel.compute_face_points(
                 matrices, half_thicknesses, t_coords, s_coords, face_sides

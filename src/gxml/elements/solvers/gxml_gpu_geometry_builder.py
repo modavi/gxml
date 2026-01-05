@@ -32,7 +32,7 @@ def _get_accelerator():
     global _SHADER_BACKEND
     if _SHADER_BACKEND is None:
         try:
-            from gpu.shader_backend import get_shader_backend
+            from .gpu.shader_backend import get_shader_backend
             _SHADER_BACKEND = get_shader_backend()
         except ImportError:
             pass

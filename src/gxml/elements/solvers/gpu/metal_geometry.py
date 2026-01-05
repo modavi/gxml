@@ -15,7 +15,7 @@ Requirements:
 - pyobjc-framework-Metal (pip install pyobjc-framework-Metal)
 
 Usage:
-    from gxml.gpu import MetalGeometryAccelerator, is_metal_available
+    from elements.solvers.gpu import MetalGeometryAccelerator, is_metal_available
     
     if is_metal_available():
         accel = MetalGeometryAccelerator()

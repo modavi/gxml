@@ -11,7 +11,7 @@ Requirements:
     pip install taichi
 
 Usage:
-    from gxml.gpu.taichi_geometry import TaichiGeometryAccelerator, is_taichi_available
+    from elements.solvers.gpu.taichi_geometry import TaichiGeometryAccelerator, is_taichi_available
     
     if is_taichi_available():
         accel = TaichiGeometryAccelerator()
