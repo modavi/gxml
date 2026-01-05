@@ -6,17 +6,20 @@ used interchangeably with the CPU (Python) solvers.
 """
 
 import numpy as np
+from pathlib import Path
 from typing import List, Tuple, Optional
 
-# Try to import C extension
+# Try to import C extension from native/build/
+_C_EXTENSION_AVAILABLE = False
 try:
-    from ._c_solvers import (
-        solve_all,
-        batch_find_intersections,
-    )
-    _C_EXTENSION_AVAILABLE = True
-except ImportError:
-    _C_EXTENSION_AVAILABLE = False
+    from gxml.native_loader import load_native_extension
+    _c_solvers = load_native_extension('_c_solvers', Path(__file__).parent / 'native')
+    if _c_solvers is not None:
+        solve_all = _c_solvers.solve_all
+        batch_find_intersections = _c_solvers.batch_find_intersections
+        _C_EXTENSION_AVAILABLE = True
+except Exception:
+    pass
 
 
 def is_c_extension_available() -> bool:

@@ -2,15 +2,20 @@
 GXMLTransform - Transformation matrix handling for GXML elements.
 """
 
+from pathlib import Path
 import mathutils.gxml_math as GXMLMath
 
 # Try to use Mat4 C type for in-place operations
+_HAS_MAT4 = False
+Mat4 = None
 try:
-    from mathutils._vec3 import Mat4
-    _HAS_MAT4 = True
-except ImportError:
-    _HAS_MAT4 = False
-    Mat4 = None
+    from gxml.native_loader import load_native_extension
+    _vec3 = load_native_extension('_vec3', Path(__file__).parent / 'native')
+    if _vec3 is not None:
+        Mat4 = _vec3.Mat4
+        _HAS_MAT4 = True
+except Exception:
+    pass
 
 
 class GXMLTransform:
@@ -166,11 +171,13 @@ class GXMLTransform:
                 quad_points[0], quad_points[1], quad_points[2], quad_points[3]
             )
         # Fallback: do it in two steps using C extension bilinear_interpolate
-        from mathutils._vec3 import bilinear_interpolate
-        interp = bilinear_interpolate(t, s, quad_points[0], quad_points[1],
-                                      quad_points[2], quad_points[3])
-        point = (interp[0], interp[1], z_offset + interp[2])
-        return GXMLMath.transform_point(point, self.transformationMatrix)
+        # _vec3 is already loaded at module level
+        if _vec3 is not None:
+            interp = _vec3.bilinear_interpolate(t, s, quad_points[0], quad_points[1],
+                                          quad_points[2], quad_points[3])
+            point = (interp[0], interp[1], z_offset + interp[2])
+            return GXMLMath.transform_point(point, self.transformationMatrix)
+        raise RuntimeError("_vec3 C extension required for bilinear_interpolate fallback")
     
     def transform_direction(self, vec):
         if _HAS_MAT4:
