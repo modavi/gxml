@@ -31,8 +31,8 @@ from .profile import (
     _PROFILING_COMPILED_OUT,
 )
 
-# Re-export from benchmark module
-from .benchmark import (
+# Re-export from runner module
+from .runner import (
     TimingResult,
     BenchmarkResult,
     OverheadResult,

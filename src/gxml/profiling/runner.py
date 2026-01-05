@@ -752,7 +752,7 @@ class OverheadResult:
 
 def _get_project_root() -> str:
     """Get the project root directory."""
-    # This file is at src/gxml/profiling/benchmark.py
+    # This file is at src/gxml/profiling/runner.py
     return str(Path(__file__).parent.parent.parent.parent)
 
 
