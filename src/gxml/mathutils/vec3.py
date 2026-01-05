@@ -11,25 +11,22 @@ If the _vec3 C extension is available, it will be used for maximum performance.
 Otherwise, falls back to pure Python implementation.
 """
 import math
-from pathlib import Path
 
 # Try to import C extension for maximum performance
-_USE_C_EXTENSION = False
 try:
-    from gxml.native_loader import load_native_extension
-    _vec3 = load_native_extension('_vec3', Path(__file__).parent / 'native')
-    if _vec3 is not None:
-        _CVec3 = _vec3.Vec3
-        _c_transform_point = _vec3.transform_point
-        _c_intersect_line_plane = _vec3.intersect_line_plane
-        _c_distance = _vec3.distance
-        _c_length = _vec3.length
-        _c_normalize = _vec3.normalize
-        _c_dot = _vec3.dot
-        _c_cross = _vec3.cross
-        _USE_C_EXTENSION = True
-except Exception:
-    pass
+    from gxml.mathutils._vec3 import (
+        Vec3 as _CVec3,
+        transform_point as _c_transform_point,
+        intersect_line_plane as _c_intersect_line_plane,
+        distance as _c_distance,
+        length as _c_length,
+        normalize as _c_normalize,
+        dot as _c_dot,
+        cross as _c_cross,
+    )
+    _USE_C_EXTENSION = True
+except ImportError:
+    _USE_C_EXTENSION = False
 
 
 class _PythonVec3:

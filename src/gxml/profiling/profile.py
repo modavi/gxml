@@ -143,22 +143,16 @@ else:
         _c_create_perf_marker = None  # type: ignore
     else:
         try:
-            from pathlib import Path
-            from gxml.native_loader import load_native_extension
-            _c_profiler = load_native_extension('_c_profiler', Path(__file__).parent / 'native')
-            if _c_profiler is not None:
-                _c_push = _c_profiler.push_marker
-                _c_pop = _c_profiler.pop_marker
-                _c_get_events = _c_profiler.get_events
-                _c_clear_events = _c_profiler.clear_events
-                _c_create_profiled_function = _c_profiler.create_profiled_function
-                _c_create_perf_marker = _c_profiler.create_perf_marker
-                _USE_C_PROFILER = True
-            else:
-                _USE_C_PROFILER = False
-                _c_create_profiled_function = None  # type: ignore
-                _c_create_perf_marker = None  # type: ignore
-        except Exception:
+            from gxml.profiling._c_profiler import (
+                push_marker as _c_push,
+                pop_marker as _c_pop,
+                get_events as _c_get_events,
+                clear_events as _c_clear_events,
+                create_profiled_function as _c_create_profiled_function,
+                create_perf_marker as _c_create_perf_marker,
+            )
+            _USE_C_PROFILER = True
+        except ImportError:
             _USE_C_PROFILER = False
             _c_create_profiled_function = None  # type: ignore
             _c_create_perf_marker = None  # type: ignore

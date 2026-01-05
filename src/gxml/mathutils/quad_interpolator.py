@@ -1,15 +1,11 @@
 # Import C extension functions if available
-from pathlib import Path
-_c_bilinear_interpolate = None
-_c_batch_bilinear_transform = None
 try:
-    from gxml.native_loader import load_native_extension
-    _vec3 = load_native_extension('_vec3', Path(__file__).parent / 'native')
-    if _vec3 is not None:
-        _c_bilinear_interpolate = _vec3.bilinear_interpolate
-        _c_batch_bilinear_transform = _vec3.batch_bilinear_transform
-except Exception:
-    pass
+    from . import _vec3
+    _c_bilinear_interpolate = _vec3.bilinear_interpolate
+    _c_batch_bilinear_transform = _vec3.batch_bilinear_transform
+except ImportError:
+    _c_bilinear_interpolate = None
+    _c_batch_bilinear_transform = None
 
 from gxml_profile import profile
 

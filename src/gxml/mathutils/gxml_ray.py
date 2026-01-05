@@ -4,19 +4,15 @@ GXMLRay - A ray with origin, direction, and length.
 
 import math
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 from .vec3 import Vec3
 
 # Import C extension function if available
-_c_project_point_on_ray = None
 try:
-    from gxml.native_loader import load_native_extension
-    _vec3 = load_native_extension('_vec3', Path(__file__).parent / 'native')
-    if _vec3 is not None:
-        _c_project_point_on_ray = _vec3.project_point_on_ray
-except Exception:
-    pass
+    from . import _vec3
+    _c_project_point_on_ray = _vec3.project_point_on_ray
+except ImportError:
+    _c_project_point_on_ray = None
 
 
 @dataclass

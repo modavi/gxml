@@ -1,39 +1,32 @@
 import math
-from pathlib import Path
 from .vec3 import Vec3, transform_point as vec3_transform_point, intersect_line_plane as vec3_intersect_line_plane
 
 # Try to import C extension functions, fall back to None if unavailable
-_HAS_C_EXTENSION = False
-_HAS_MAT4 = False
-_c_lerp = _c_mat4_invert = _c_find_interpolated_point = None
-_c_mat4_multiply = _c_cross_product = _c_is_point_on_line_segment = None
-_c_batch_transform_points = _c_dot = _c_normalize = None
-_c_distance = _c_length = _c_project_point_on_ray = None
-_c_create_transform_matrix_from_quad = None
-Mat4 = None
-
 try:
-    from gxml.native_loader import load_native_extension
-    _vec3 = load_native_extension('_vec3', Path(__file__).parent / 'native')
-    if _vec3 is not None:
-        _c_lerp = _vec3.lerp
-        _c_mat4_invert = _vec3.mat4_invert
-        _c_find_interpolated_point = _vec3.find_interpolated_point
-        _c_mat4_multiply = _vec3.mat4_multiply
-        _c_cross_product = _vec3.cross_product
-        _c_is_point_on_line_segment = _vec3.is_point_on_line_segment
-        _c_batch_transform_points = _vec3.batch_transform_points
-        _c_dot = _vec3.dot
-        _c_normalize = _vec3.normalize
-        _c_distance = _vec3.distance
-        _c_length = _vec3.length
-        _c_project_point_on_ray = _vec3.project_point_on_ray
-        _c_create_transform_matrix_from_quad = _vec3.create_transform_matrix_from_quad
-        Mat4 = _vec3.Mat4
-        _HAS_C_EXTENSION = True
-        _HAS_MAT4 = True
-except Exception:
-    pass
+    from ._vec3 import (lerp as _c_lerp, mat4_invert as _c_mat4_invert, 
+                        find_interpolated_point as _c_find_interpolated_point,
+                        mat4_multiply as _c_mat4_multiply,
+                        cross_product as _c_cross_product,
+                        is_point_on_line_segment as _c_is_point_on_line_segment,
+                        batch_transform_points as _c_batch_transform_points,
+                        dot as _c_dot,
+                        normalize as _c_normalize,
+                        distance as _c_distance,
+                        length as _c_length,
+                        project_point_on_ray as _c_project_point_on_ray,
+                        create_transform_matrix_from_quad as _c_create_transform_matrix_from_quad,
+                        Mat4)
+    _HAS_C_EXTENSION = True
+    _HAS_MAT4 = True
+except ImportError:
+    _HAS_C_EXTENSION = False
+    _HAS_MAT4 = False
+    _c_lerp = _c_mat4_invert = _c_find_interpolated_point = None
+    _c_mat4_multiply = _c_cross_product = _c_is_point_on_line_segment = None
+    _c_batch_transform_points = _c_dot = _c_normalize = None
+    _c_distance = _c_length = _c_project_point_on_ray = None
+    _c_create_transform_matrix_from_quad = None
+    Mat4 = None
 #from scipy.spatial.transform import Rotation as R
 
 # Identity matrix as tuple-of-tuples (immutable)

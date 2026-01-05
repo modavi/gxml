@@ -15,23 +15,13 @@
 
 from typing import List, Tuple, Optional
 import math
-from pathlib import Path
 from elements.gxml_base_element import GXMLLayoutElement
 from gxml_types import *
 
 # Try C extension, fall back to pure Python
-_cross = _normalize = _distance = None
 try:
-    from gxml.native_loader import load_native_extension
-    _vec3 = load_native_extension('_vec3', Path(__file__).parent.parent / 'mathutils' / 'native')
-    if _vec3 is not None:
-        _cross = _vec3.cross_product
-        _normalize = _vec3.normalize
-        _distance = _vec3.distance
-except Exception:
-    pass
-
-if _cross is None:
+    from mathutils._vec3 import cross_product as _cross, normalize as _normalize, distance as _distance
+except ImportError:
     # Pure Python fallbacks
     def _cross(a, b):
         return (
