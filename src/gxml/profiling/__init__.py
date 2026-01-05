@@ -20,24 +20,25 @@ For benchmarking utilities, use scripts/benchmark.py or tests/test_fixtures/prof
 
 # Re-export from profile module
 from .profile import (
-    enable_profiling,
-    is_profiling_enabled,
+    _USE_C_PROFILER,
+    _PROFILING_COMPILED_OUT,
+    is_c_profiler_available,
     reset_profile,
     get_profile_results,
     perf_marker,
     get_marker,
     profile,
-    _PROFILING_COMPILED_OUT,
 )
 
 __all__ = [
+    # Backend
+    '_USE_C_PROFILER',
+    '_PROFILING_COMPILED_OUT',
+    'is_c_profiler_available',
     # Profile markers
-    'enable_profiling',
-    'is_profiling_enabled', 
     'reset_profile',
     'get_profile_results',
     'perf_marker',
     'get_marker',
     'profile',
-    '_PROFILING_COMPILED_OUT',
 ]
